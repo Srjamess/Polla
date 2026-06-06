@@ -8,31 +8,75 @@
   </head>
   <body>
     <header class="topbar">
-      <a class="app-logo" href="dashboard.html">PM</a>
-      <nav class="nav-links">
-        <a href="dashboard.html">Partidos</a>
-        <a class="active" href="leaderboard.html">Tabla</a>
-      </nav>
-      <div class="user-chip">
-        <span id="currentUser"></span>
-        <button id="logoutButton" class="ghost-button" type="button">Salir</button>
-      </div>
+      <div class="topbar-label">POLLA MUNDIALISTA</div>
+      <span id="currentUser" class="visually-hidden"></span>
+      <button class="profile-trigger" type="button" data-open-more aria-label="Abrir mas opciones">
+        <span id="userAvatar" class="user-avatar">PM</span>
+      </button>
     </header>
 
     <main class="page-shell">
-      <section class="page-heading">
-        <div>
-          <p class="eyebrow">Ranking general</p>
-          <h1>Tabla de posiciones</h1>
-        </div>
-        <a class="secondary-button" href="dashboard.html">Volver a partidos</a>
+      <section class="hero-section hero-section-compact">
+        <a class="leaderboard-back" href="dashboard.html?view=standings">← Volver</a>
+        <p class="eyebrow">Ranking general</p>
+        <h1 class="hero-title">
+          <span class="hero-line hero-line-strong">Tabla de</span>
+          <span class="hero-line hero-line-soft">posiciones</span>
+        </h1>
       </section>
 
-      <section class="glass-card leaderboard-card">
+      <section class="leaderboard-card">
         <div id="leaderboardList" class="leaderboard-list"></div>
-        <p id="emptyLeaderboard" class="empty-state hidden">Aún no hay usuarios en la tabla.</p>
+        <p id="emptyLeaderboard" class="empty-state hidden">Aun no hay usuarios en la tabla.</p>
       </section>
     </main>
+
+    <nav class="bottom-nav" aria-label="Navegacion principal">
+      <a class="bottom-nav-item is-active" href="leaderboard.html" data-bottom-nav="leaderboard">
+        <span class="bottom-nav-icon">🏆</span>
+        <span class="bottom-nav-label">Tabla</span>
+      </a>
+      <button class="bottom-nav-item" type="button" data-open-more data-bottom-nav="more">
+        <span class="bottom-nav-icon">•••</span>
+        <span class="bottom-nav-label">Mas</span>
+      </button>
+    </nav>
+
+    <div class="sheet-shell hidden" id="moreSheet" aria-hidden="true">
+      <div class="sheet-overlay" data-close-more></div>
+      <div class="sheet-card">
+        <div class="sheet-head">
+          <h2>Mas opciones</h2>
+          <button class="sheet-close" type="button" aria-label="Cerrar" data-close-more>&times;</button>
+        </div>
+        <div class="sheet-list">
+          <button class="sheet-item sheet-item-danger hidden" type="button" data-admin-reset-pruebas>
+            <span class="sheet-item-icon">!</span>
+            <span class="sheet-item-label">Reset pruebas</span>
+          </button>
+          <a class="sheet-item" href="dashboard.html?view=matches">
+            <span class="sheet-item-icon">📄</span>
+            <span class="sheet-item-label">Partidos</span>
+          </a>
+          <a class="sheet-item" href="dashboard.html?view=predictions">
+            <span class="sheet-item-icon">🎯</span>
+            <span class="sheet-item-label">Predicciones</span>
+          </a>
+          <button class="sheet-item" type="button" data-open-scoring>
+            <span class="sheet-item-icon">?</span>
+            <span class="sheet-item-label">Calificacion</span>
+          </button>
+          <button class="sheet-item" type="button" data-open-predictions-help>
+            <span class="sheet-item-icon">i</span>
+            <span class="sheet-item-label">Como predecir</span>
+          </button>
+          <button class="sheet-item" type="button" data-logout>
+            <span class="sheet-item-icon">↩</span>
+            <span class="sheet-item-label">Salir</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div id="toastRoot" class="toast-root" aria-live="polite"></div>
     <script src="app.js"></script>

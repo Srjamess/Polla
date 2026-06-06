@@ -170,11 +170,12 @@ function sortMatchesForResolution(matches) {
   });
 }
 
-function buildResolutionContext(matches, predictionByMatchId = new Map()) {
-  const actualMode = predictionByMatchId.size === 0;
+function buildResolutionContext(matches, predictionByMatchId) {
+  const actualMode = predictionByMatchId == null;
+  const predictionMap = actualMode ? null : predictionByMatchId;
   const scoreGetter = actualMode
     ? (match) => getActualScore(match)
-    : (match) => getPredictedScore(match, predictionByMatchId);
+    : (match) => getPredictedScore(match, predictionMap);
   const { tables, groupStatus } = buildGroupTables(matches, scoreGetter);
   const matchesByCode = new Map(
     matches
@@ -193,7 +194,7 @@ function buildResolutionContext(matches, predictionByMatchId = new Map()) {
 
   const getQualifiedSide = actualMode
     ? (match) => getActualQualifiedSide(match)
-    : (match) => getPredictedQualifiedSide(match, predictionByMatchId);
+    : (match) => getPredictedQualifiedSide(match, predictionMap);
 
   return {
     actualMode,
@@ -216,7 +217,7 @@ function resolveSource(source, context) {
     const index = Number(groupMatch[1]) - 1;
     const group = groupMatch[2].toUpperCase();
     const status = context.groupStatus[group];
-    if (context.actualMode && (!status || status.total === 0 || status.completed < status.total)) {
+    if (!status || status.total === 0 || status.completed < status.total) {
       return null;
     }
     return context.tables[group]?.[index]?.team || null;
@@ -230,7 +231,10 @@ function resolveSource(source, context) {
 
     const allowedGroups = new Set(bestThirdMatch[1].toUpperCase().split(''));
     const candidate = context.thirdPlaceRows.find(
-      (row) => allowedGroups.has(row.group) && !context.usedThirdGroups.has(row.group)
+      (row) => {
+        const status = context.groupStatus[row.group];
+        return allowedGroups.has(row.group) && !context.usedThirdGroups.has(row.group) && status && status.total > 0 && status.completed === status.total;
+      }
     );
 
     if (!candidate) return null;
@@ -278,6 +282,8 @@ function calculateGroupBonus(actualContext, predictedContext) {
   Object.keys(actualContext.tables).forEach((group) => {
     const actualStatus = actualContext.groupStatus[group];
     if (!actualStatus || actualStatus.completed < actualStatus.total) return;
+    const predictedStatus = predictedContext.groupStatus[group];
+    if (!predictedStatus || predictedStatus.total === 0 || predictedStatus.completed < predictedStatus.total) return;
 
     const actualRows = actualContext.tables[group] || [];
     const predictedRows = predictedContext.tables[group] || [];

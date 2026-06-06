@@ -8,33 +8,17 @@
   </head>
   <body>
     <header class="topbar">
-      <a class="app-logo" href="dashboard.html">PM</a>
-      <nav class="nav-links">
-        <a class="active" href="dashboard.html">Partidos</a>
-        <a href="leaderboard.html">Tabla</a>
-      </nav>
-      <div class="user-chip">
-        <span id="currentUser"></span>
-        <button id="logoutButton" class="ghost-button" type="button">Salir</button>
-      </div>
+      <div class="topbar-label">POLLA MUNDIALISTA</div>
+      <span id="currentUser" class="visually-hidden"></span>
+      <button class="profile-trigger" type="button" data-open-more aria-label="Abrir mas opciones">
+        <span id="userAvatar" class="user-avatar">PM</span>
+      </button>
     </header>
 
     <main class="page-shell">
-      <section class="page-heading">
-        <div>
-          <p class="eyebrow">Polla Mundialista</p>
-          <h1>Fixture y predicciones</h1>
-        </div>
-        <a class="secondary-button" href="leaderboard.html">Ver tabla</a>
-      </section>
-
-      <section id="dashboardStats" class="stats-grid"></section>
-
-      <section id="adminPanel" class="admin-panel glass-card hidden">
-        <h2>Administracion</h2>
-        <p class="admin-note">
-          El fixture oficial ya esta cargado. Usa los formularios dentro de cada tarjeta para guardar resultados reales y definir el clasificado en cruces empatados.
-        </p>
+      <section class="hero-section">
+        <p class="eyebrow">Temporada 2026</p>
+        <div id="dashboardNextMatch" class="hero-next-match" aria-label="Proximo partido"></div>
       </section>
 
       <section class="fixture-tabs" aria-label="Secciones del fixture">
@@ -44,12 +28,58 @@
         <button class="fixture-tab" type="button" data-view="bracket">Eliminatoria</button>
       </section>
 
+      <section id="adminPanel" class="admin-panel glass-card hidden">
+        <h2>Administracion</h2>
+        <p class="admin-note">
+          El fixture oficial ya esta cargado. Usa los formularios dentro de cada tarjeta para guardar resultados reales y definir el clasificado en cruces empatados.
+        </p>
+      </section>
+
       <section id="groupsBoard" class="groups-board"></section>
       <section id="matchesBoard" class="groups-board"></section>
       <section id="predictionsBoard" class="groups-board"></section>
       <section id="knockoutBoard" class="knockout-board"></section>
-      <p id="emptyMatches" class="empty-state hidden">No hay partidos creados todavía.</p>
+      <p id="emptyMatches" class="empty-state hidden">No hay partidos creados todavia.</p>
     </main>
+
+    <nav class="bottom-nav" aria-label="Navegacion principal">
+      <a class="bottom-nav-item" href="leaderboard.html" data-bottom-nav="leaderboard">
+        <span class="bottom-nav-icon">🏆</span>
+        <span class="bottom-nav-label">Tabla</span>
+      </a>
+      <button class="bottom-nav-item" type="button" data-open-more data-bottom-nav="more">
+        <span class="bottom-nav-icon">•••</span>
+        <span class="bottom-nav-label">Mas</span>
+      </button>
+    </nav>
+
+    <div class="sheet-shell hidden" id="moreSheet" aria-hidden="true">
+      <div class="sheet-overlay" data-close-more></div>
+      <div class="sheet-card">
+        <div class="sheet-head">
+          <h2>Mas opciones</h2>
+          <button class="sheet-close" type="button" aria-label="Cerrar" data-close-more>&times;</button>
+        </div>
+        <div class="sheet-list">
+          <button class="sheet-item sheet-item-danger hidden" type="button" data-admin-reset-pruebas>
+            <span class="sheet-item-icon">!</span>
+            <span class="sheet-item-label">Reset pruebas</span>
+          </button>
+          <button class="sheet-item" type="button" data-open-scoring>
+            <span class="sheet-item-icon">?</span>
+            <span class="sheet-item-label">Calificacion</span>
+          </button>
+          <button class="sheet-item" type="button" data-open-predictions-help>
+            <span class="sheet-item-icon">i</span>
+            <span class="sheet-item-label">Como predecir</span>
+          </button>
+          <button class="sheet-item" type="button" data-logout>
+            <span class="sheet-item-icon">↩</span>
+            <span class="sheet-item-label">Salir</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div id="toastRoot" class="toast-root" aria-live="polite"></div>
     <script src="app.js"></script>

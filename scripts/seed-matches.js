@@ -138,7 +138,7 @@ const knockoutStage = [
   knockoutMatch('F-1', 'final', '2026-07-19T15:00:00-04:00', 'winner:SF-1', 'winner:SF-2', 'Estadio Nueva York/Nueva Jersey (Nueva Jersey)')
 ];
 
-async function seed() {
+async function seed(matchesToInsert = [...groupStage, ...knockoutStage], label = 'matches') {
   if (!process.env.MONGO_URI) {
     console.error('MONGO_URI is required.');
     process.exit(1);
@@ -146,12 +146,20 @@ async function seed() {
 
   await mongoose.connect(process.env.MONGO_URI);
   await Match.deleteMany({});
-  await Match.insertMany([...groupStage, ...knockoutStage]);
+  await Match.insertMany(matchesToInsert);
   await mongoose.disconnect();
-  console.log(`Seeded ${groupStage.length + knockoutStage.length} matches.`);
+  console.log(`Seeded ${matchesToInsert.length} ${label}.`);
 }
 
-seed().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  seed().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  seed,
+  groupStage,
+  knockoutStage
+};

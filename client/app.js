@@ -11,7 +11,12 @@ const state = {
   user: safeParse(localStorage.getItem('pm_user'), null),
   token: localStorage.getItem('pm_token'),
   activeView: 'standings',
-  matches: []
+  matches: [],
+  myPredictions: [],
+  predictionDrafts: {},
+  pendingPredictionStage: null,
+  savingPredictionStage: null,
+  invalidPredictionMatchIds: []
 };
 
 const teamFlags = {
@@ -98,6 +103,44 @@ const groupTeams = {
   K: ['Portugal', 'RD Congo', 'Uzbekistán', 'Colombia'],
   L: ['Inglaterra', 'Croacia', 'Ghana', 'Panamá']
 };
+
+function normalizeTeamName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+const groupTeamOrder = Object.fromEntries(
+  Object.entries(groupTeams).map(([group, teams]) => [
+    group,
+    new Map(
+      teams.flatMap((team, index) => [
+        [team, index],
+        [normalizeTeamName(team), index]
+      ])
+    )
+  ])
+);
+
+function compareGroupTeamsByFifaOrder(group, teamA, teamB) {
+  const orderMap = groupTeamOrder[group] || null;
+  const orderA = orderMap?.get(teamA);
+  const orderB = orderMap?.get(teamB);
+  const normalizedA = orderMap?.get(normalizeTeamName(teamA));
+  const normalizedB = orderMap?.get(normalizeTeamName(teamB));
+  const seedA = orderA ?? normalizedA;
+  const seedB = orderB ?? normalizedB;
+
+  if (seedA != null && seedB != null && seedA !== seedB) {
+    return seedA - seedB;
+  }
+  if (seedA != null) return -1;
+  if (seedB != null) return 1;
+  return String(teamA || '').localeCompare(String(teamB || ''));
+}
 
 function demoFixture(id, teamA, teamB, group, date, venue) {
   return {
@@ -302,16 +345,77 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-function flagUrl(teamName) {
+const specialFlagEmoji = {
+  'Bosnia y Herzegovina': '🇧🇦',
+  'Republica de Corea': '🇰🇷',
+  'República de Corea': '🇰🇷',
+  'RI de Iran': '🇮🇷',
+  'RI de Irán': '🇮🇷',
+  Inglaterra: '🏴',
+  Escocia: '🏴'
+};
+
+function flagCode(teamName) {
   const key = Object.keys(teamFlags).find((item) => String(teamName).includes(item));
-  return key ? `https://flagcdn.com/${teamFlags[key]}.svg` : '';
+  return key ? teamFlags[key] : '';
+}
+
+function flagEmoji(teamName) {
+  const specialKey = Object.keys(specialFlagEmoji).find((item) => String(teamName).includes(item));
+  if (specialKey) return specialFlagEmoji[specialKey];
+
+  const code = flagCode(teamName);
+  if (!code || code.length !== 2) return '⚽';
+
+  return code
+    .toUpperCase()
+    .split('')
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join('');
+}
+
+const reliableSpecialFlagEmoji = {
+  'Bosnia y Herzegovina': '\u{1F1E7}\u{1F1E6}',
+  'Republica de Corea': '\u{1F1F0}\u{1F1F7}',
+  'República de Corea': '\u{1F1F0}\u{1F1F7}',
+  'RI de Iran': '\u{1F1EE}\u{1F1F7}',
+  'RI de Irán': '\u{1F1EE}\u{1F1F7}',
+  Inglaterra: '\u{1F3F4}',
+  Escocia: '\u{1F3F4}'
+};
+
+function reliableFlagEmoji(teamName) {
+  const specialKey = Object.keys(reliableSpecialFlagEmoji).find((item) => String(teamName).includes(item));
+  if (specialKey) return reliableSpecialFlagEmoji[specialKey];
+
+  const code = flagCode(teamName);
+  if (!code || code.length !== 2) return '\u26BD';
+
+  return code
+    .toUpperCase()
+    .split('')
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join('');
 }
 
 function renderFlag(teamName) {
-  const url = flagUrl(teamName);
-  return url
-    ? `<img class="flag-img" src="${url}" alt="Bandera de ${escapeHtml(teamName)}" loading="lazy" />`
-    : '<span class="flag-placeholder"></span>';
+  const code = flagCode(teamName);
+  if (code && code.length === 2) {
+    return `
+      <span class="flag-mark" aria-hidden="true">
+        <img
+          class="flag-img"
+          src="https://flagcdn.com/w40/${code.toLowerCase()}.png"
+          alt=""
+          loading="lazy"
+          onerror="this.style.display='none'; this.parentElement.querySelector('.flag-emoji-fallback').style.display='inline';"
+        />
+        <span class="flag-emoji-fallback" style="display:none;">${reliableFlagEmoji(teamName)}</span>
+      </span>
+    `;
+  }
+
+  return `<span class="flag-mark" aria-hidden="true"><span class="flag-emoji-fallback">${reliableFlagEmoji(teamName)}</span></span>`;
 }
 
 function formatDate(value) {
@@ -352,31 +456,50 @@ function computeGroupTables(matches) {
   const tables = {};
   const groupStatus = {};
 
-  Object.entries(groupTeams).forEach(([group, teams]) => {
-    tables[group] = teams.map((team) => ({
-      team,
-      played: 0,
-      wins: 0,
-      draws: 0,
-      losses: 0,
-      goalsFor: 0,
-      goalsAgainst: 0,
-      diff: 0,
-      points: 0
-    }));
-    groupStatus[group] = { total: 0, completed: 0 };
-  });
+  matches
+    .filter((match) => match.stage === 'group')
+    .forEach((match) => {
+      const group = String(match.group || '').toUpperCase();
+      if (!group) return;
 
-  matches.filter((match) => match.stage === 'group').forEach((match) => {
-    if (!groupStatus[match.group]) {
-      groupStatus[match.group] = { total: 0, completed: 0 };
-    }
-    groupStatus[match.group].total += 1;
-    if (match.resultSet) groupStatus[match.group].completed += 1;
-  });
+      if (!tables[group]) tables[group] = [];
+      if (!groupStatus[group]) groupStatus[group] = { total: 0, completed: 0 };
+
+      if (!tables[group].some((row) => row.team === match.teamA)) {
+        tables[group].push({
+          team: match.teamA,
+          played: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          goalsFor: 0,
+          goalsAgainst: 0,
+          diff: 0,
+          points: 0
+        });
+      }
+
+      if (!tables[group].some((row) => row.team === match.teamB)) {
+        tables[group].push({
+          team: match.teamB,
+          played: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          goalsFor: 0,
+          goalsAgainst: 0,
+          diff: 0,
+          points: 0
+        });
+      }
+
+      groupStatus[group].total += 1;
+      if (match.resultSet) groupStatus[group].completed += 1;
+    });
 
   matches.filter((match) => match.stage === 'group' && match.resultSet).forEach((match) => {
-    const rows = tables[match.group] || [];
+    const group = String(match.group || '').toUpperCase();
+    const rows = tables[group] || [];
     const a = rows.find((row) => row.team === match.teamA);
     const b = rows.find((row) => row.team === match.teamB);
     if (!a || !b) return;
@@ -407,11 +530,18 @@ function computeGroupTables(matches) {
     b.diff = b.goalsFor - b.goalsAgainst;
   });
 
-  Object.values(tables).forEach((rows) => {
-    rows.sort((a, b) => b.points - a.points || b.diff - a.diff || b.goalsFor - a.goalsFor);
+  Object.entries(tables).forEach(([group, rows]) => {
+    rows.sort((a, b) => b.points - a.points || b.diff - a.diff || b.goalsFor - a.goalsFor || compareGroupTeamsByFifaOrder(group, a.team, b.team));
   });
 
-  return { tables, groupStatus };
+  const orderedTables = Object.fromEntries(
+    Object.entries(tables).sort(([groupA], [groupB]) => groupA.localeCompare(groupB))
+  );
+  const orderedStatus = Object.fromEntries(
+    Object.entries(groupStatus).sort(([groupA], [groupB]) => groupA.localeCompare(groupB))
+  );
+
+  return { tables: orderedTables, groupStatus: orderedStatus };
 }
 
 function computePredictedGroupTables(matches) {
@@ -470,8 +600,8 @@ function computePredictedGroupTables(matches) {
     b.diff = b.goalsFor - b.goalsAgainst;
   });
 
-  Object.values(tables).forEach((rows) => {
-    rows.sort((a, b) => b.points - a.points || b.diff - a.diff || b.goalsFor - a.goalsFor || a.team.localeCompare(b.team));
+  Object.entries(tables).forEach(([group, rows]) => {
+    rows.sort((a, b) => b.points - a.points || b.diff - a.diff || b.goalsFor - a.goalsFor || compareGroupTeamsByFifaOrder(group, a.team, b.team));
   });
 
   return { tables, groupStatus };
@@ -495,6 +625,8 @@ function buildClientPredictionResolution(matches) {
     if (groupMatch) {
       const index = Number(groupMatch[1]) - 1;
       const group = groupMatch[2].toUpperCase();
+      const status = groupStatus[group];
+      if (!status || status.total === 0 || status.completed < status.total) return '';
       return tables[group]?.[index]?.team || '';
     }
 
@@ -502,7 +634,10 @@ function buildClientPredictionResolution(matches) {
     if (bestThirdMatch) {
       if (thirdAssignments.has(text)) return thirdAssignments.get(text) || '';
       const allowedGroups = new Set(bestThirdMatch[1].toUpperCase().split(''));
-      const candidate = thirdPlaceRows.find((row) => allowedGroups.has(row.group) && !usedThirdGroups.has(row.group));
+      const candidate = thirdPlaceRows.find((row) => {
+        const status = groupStatus[row.group];
+        return allowedGroups.has(row.group) && !usedThirdGroups.has(row.group) && status && status.total > 0 && status.completed === status.total;
+      });
       if (!candidate) return '';
       usedThirdGroups.add(candidate.group);
       thirdAssignments.set(text, candidate.team);
@@ -595,16 +730,18 @@ function getPersonalResolvedTeam(match, side) {
     : (match.predictedResolvedTeamB || match.clientPredictedResolvedTeamB || match.teamB || '');
 }
 
-function renderPersonalTeam(match, side) {
+function renderPersonalTeam(match, side, showSource = true) {
   const source = side === 'A' ? match.sourceA : match.sourceB;
   const resolvedName = getPersonalResolvedTeam(match, side);
   const label = resolvedName || (source ? prettySourceLabel(source) : 'Por definir');
+  const isRightSide = side === 'B';
 
   return `
-    <div class="team-lockup ${resolvedName ? '' : 'pending-team'}">
-      ${resolvedName ? renderFlag(resolvedName) : '<span class="flag-placeholder empty"></span>'}
+    <div class="team-lockup ${resolvedName ? '' : 'pending-team'} ${isRightSide ? 'team-lockup-right' : ''}">
+      ${isRightSide ? '' : (resolvedName ? renderFlag(resolvedName) : '<span class="flag-placeholder empty"></span>')}
       <span class="team-name">${escapeHtml(label || 'Por definir')}</span>
-      ${source ? `<small>${escapeHtml(prettySourceLabel(source))}</small>` : ''}
+      ${isRightSide ? (resolvedName ? renderFlag(resolvedName) : '<span class="flag-placeholder empty"></span>') : ''}
+      ${showSource && source ? `<small>${escapeHtml(prettySourceLabel(source))}</small>` : ''}
     </div>
   `;
 }
@@ -662,6 +799,18 @@ function fixtureStageLabel(stage) {
   }[stage] || stageLabel(stage);
 }
 
+function stageNavLabel(stage) {
+  return {
+    group: 'Grupos',
+    roundOf32: '16avos',
+    roundOf16: '8avos',
+    quarterfinal: 'Cuartos',
+    semifinal: 'Semi',
+    thirdPlace: '3ro',
+    final: 'Fin'
+  }[stage] || stageLabel(stage);
+}
+
 function prettySourceLabel(source) {
   const text = String(source || '');
   const groupMatch = text.match(/^([123])([A-L])$/i);
@@ -673,48 +822,315 @@ function prettySourceLabel(source) {
   return text;
 }
 
+function getPredictionDraft(match) {
+  return state.predictionDrafts[match._id] || {
+    predictedScoreA: '',
+    predictedScoreB: '',
+    predictedQualifiedTeam: ''
+  };
+}
+
+function isPredictionTie(match, draft = getPredictionDraft(match)) {
+  if (match.stage === 'group') return false;
+  if (!isFilledScore(draft.predictedScoreA) || !isFilledScore(draft.predictedScoreB)) return false;
+
+  return Number(draft.predictedScoreA) === Number(draft.predictedScoreB);
+}
+
+function syncPredictionQualifiedField(matchId) {
+  const match = state.matches.find((item) => String(item._id) === String(matchId));
+  if (!match || match.stage === 'group') return;
+
+  const card = document.querySelector(`[data-match-id="${String(matchId)}"]`);
+  if (!card) return;
+
+  const wrapper = card.querySelector('[data-prediction-qualified-wrap]');
+  const select = card.querySelector('[data-prediction-qualified-select]');
+  const draft = getPredictionDraft(match);
+  const isTie = isPredictionTie(match, draft);
+
+  if (wrapper) wrapper.classList.toggle('hidden', !isTie);
+  if (select) {
+    select.disabled = !isTie || match.locked;
+    if (!isTie) {
+      select.value = '';
+    } else if (draft.predictedQualifiedTeam) {
+      select.value = draft.predictedQualifiedTeam;
+    }
+  }
+}
+
+function getPredictionMatchLabel(match) {
+  const labelA = getPersonalResolvedTeam(match, 'A') || prettySourceLabel(match.sourceA) || match.teamA || 'Por definir';
+  const labelB = getPersonalResolvedTeam(match, 'B') || prettySourceLabel(match.sourceB) || match.teamB || 'Por definir';
+  return `${labelA} vs ${labelB}`;
+}
+
+function getPredictionDisplayTeamLabel(match, side) {
+  const resolved = getPersonalResolvedTeam(match, side);
+  if (resolved) return resolved;
+
+  const source = side === 'A' ? match.sourceA : match.sourceB;
+  const sourceLabel = prettySourceLabel(source);
+  if (sourceLabel && sourceLabel !== String(source || '')) return sourceLabel;
+
+  return side === 'A'
+    ? (match.teamA || 'Por definir')
+    : (match.teamB || 'Por definir');
+}
+
+function syncPredictionDrafts(matches) {
+  const nextDrafts = {};
+
+  matches
+    .filter((match) => !match.locked)
+    .forEach((match) => {
+      const currentDraft = state.predictionDrafts[match._id] || {};
+      const savedPrediction = match.prediction || {};
+
+      nextDrafts[match._id] = {
+        predictedScoreA: currentDraft.predictedScoreA ?? savedPrediction.predictedScoreA ?? '',
+        predictedScoreB: currentDraft.predictedScoreB ?? savedPrediction.predictedScoreB ?? '',
+        predictedQualifiedTeam: currentDraft.predictedQualifiedTeam ?? savedPrediction.predictedQualifiedTeam ?? ''
+      };
+    });
+
+  state.predictionDrafts = nextDrafts;
+}
+
+function isFilledScore(value) {
+  return value !== '' && value !== null && value !== undefined;
+}
+
+function normalizeDraftPayload(match, draft) {
+  const scoreA = Number(draft.predictedScoreA);
+  const scoreB = Number(draft.predictedScoreB);
+
+  if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB) || scoreA < 0 || scoreB < 0) {
+    return null;
+  }
+
+  let predictedQualifiedTeam = '';
+  if (match.stage !== 'group') {
+    if (scoreA === scoreB) {
+      if (!['teamA', 'teamB'].includes(draft.predictedQualifiedTeam)) return null;
+      predictedQualifiedTeam = draft.predictedQualifiedTeam;
+    } else {
+      predictedQualifiedTeam = scoreA > scoreB ? 'teamA' : 'teamB';
+    }
+  }
+
+  return {
+    predictedScoreA: scoreA,
+    predictedScoreB: scoreB,
+    predictedQualifiedTeam
+  };
+}
+
+function isPredictionDraftComplete(match, draft = getPredictionDraft(match)) {
+  if (!isFilledScore(draft.predictedScoreA) || !isFilledScore(draft.predictedScoreB)) return false;
+  return Boolean(normalizeDraftPayload(match, draft));
+}
+
+function isPredictionDraftSaved(match, draft = getPredictionDraft(match)) {
+  const normalized = normalizeDraftPayload(match, draft);
+  if (!normalized || !match.prediction) return false;
+
+  return (
+    Number(match.prediction.predictedScoreA) === normalized.predictedScoreA &&
+    Number(match.prediction.predictedScoreB) === normalized.predictedScoreB &&
+    String(match.prediction.predictedQualifiedTeam || '') === normalized.predictedQualifiedTeam
+  );
+}
+
+function getStagePredictionState(stageMatches) {
+  const total = stageMatches.length;
+  const completed = stageMatches.filter((match) => isPredictionDraftComplete(match)).length;
+  const missing = total - completed;
+  const saved = total > 0 && missing === 0 && stageMatches.every((match) => isPredictionDraftSaved(match));
+  const progress = total ? Math.round((completed / total) * 100) : 0;
+
+  return { total, completed, missing, saved, progress };
+}
+
+function getIncompletePredictionReason(match, draft = getPredictionDraft(match)) {
+  if (!isFilledScore(draft.predictedScoreA) || !isFilledScore(draft.predictedScoreB)) {
+    return 'Falta completar el marcador.';
+  }
+
+  if (match.stage !== 'group' && Number(draft.predictedScoreA) === Number(draft.predictedScoreB) && !draft.predictedQualifiedTeam) {
+    return 'Falta seleccionar el equipo que clasifica.';
+  }
+
+  if (!normalizeDraftPayload(match, draft)) {
+    return 'La prediccion esta incompleta.';
+  }
+
+  return '';
+}
+
+function renderPredictionProgress(stageMatches) {
+  const summary = getStagePredictionState(stageMatches);
+
+  return `
+    <div class="prediction-progress" data-prediction-progress>
+      <div class="prediction-progress-copy">
+        <strong>${summary.completed}/${summary.total}</strong>
+        <span>predicciones completas</span>
+      </div>
+      <div class="prediction-progress-track" aria-hidden="true">
+        <span style="width:${summary.progress}%"></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderPredictionReviewRows(stageMatches) {
+  return stageMatches.map((match) => {
+    const draft = getPredictionDraft(match);
+    const normalized = normalizeDraftPayload(match, draft) || draft;
+    const score = `${normalized.predictedScoreA}-${normalized.predictedScoreB}`;
+    const qualifier =
+      match.stage !== 'group' && Number(normalized.predictedScoreA) === Number(normalized.predictedScoreB)
+        ? ` · Clasifica ${normalized.predictedQualifiedTeam === 'teamA' ? escapeHtml(getPersonalResolvedTeam(match, 'A') || match.teamA) : escapeHtml(getPersonalResolvedTeam(match, 'B') || match.teamB)}`
+        : '';
+
+    return `
+      <div class="prediction-review-row">
+        <div class="prediction-review-match">
+          <strong>${escapeHtml(getPredictionMatchLabel(match))}</strong>
+          <span>${escapeHtml(stageLabel(match.stage))}</span>
+        </div>
+        <div class="prediction-review-score">${escapeHtml(score)}${qualifier}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderPredictionReviewCards(stageMatches) {
+  return stageMatches.map((match) => {
+    const draft = getPredictionDraft(match);
+    const normalized = normalizeDraftPayload(match, draft) || draft;
+    const score = `${normalized.predictedScoreA}-${normalized.predictedScoreB}`;
+    const teamALabel = match.actualResolvedTeamA || match.predictedResolvedTeamA || getPredictionDisplayTeamLabel(match, 'A');
+    const teamBLabel = match.actualResolvedTeamB || match.predictedResolvedTeamB || getPredictionDisplayTeamLabel(match, 'B');
+    const qualifier =
+      match.stage !== 'group' && Number(normalized.predictedScoreA) === Number(normalized.predictedScoreB) && normalized.predictedQualifiedTeam
+        ? `Clasifica ${normalized.predictedQualifiedTeam === 'teamA' ? escapeHtml(teamALabel) : escapeHtml(teamBLabel)}`
+        : '';
+
+    return `
+      <article class="fixture-fifa-card prediction-review-card">
+        <div class="match-meta prediction-review-meta">
+          <span>${escapeHtml(stageLabel(match.stage))}</span>
+          <span>${match.code ? escapeHtml(match.code) : ''}</span>
+        </div>
+        <div class="fixture-fifa-inner prediction-review-inner">
+          <div class="fixture-fifa-team fixture-fifa-team-left">
+            ${renderFlag(teamALabel)}
+            <span class="fixture-fifa-team-name">${escapeHtml(teamALabel)}</span>
+          </div>
+          <div class="fixture-fifa-kickoff prediction-review-score">${escapeHtml(score)}</div>
+          <div class="fixture-fifa-team fixture-fifa-team-right">
+            <span class="fixture-fifa-team-name">${escapeHtml(teamBLabel)}</span>
+            ${renderFlag(teamBLabel)}
+          </div>
+          <div class="fixture-fifa-meta prediction-review-foot">
+            <span>${escapeHtml(getPredictionMatchLabel(match))}</span>
+            ${qualifier ? `<span class="fixture-fifa-dot">·</span><span>${qualifier}</span>` : ''}
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+function renderPredictionReviewSheet(matches) {
+  const stage = state.pendingPredictionStage;
+  const stageMatches = stage ? matches.filter((match) => match.stage === stage && !match.locked) : [];
+  const hidden = stage ? '' : 'hidden';
+  const saving = state.savingPredictionStage === stage;
+
+  return `
+    <div class="sheet-shell ${hidden}" id="predictionReviewSheet" aria-hidden="${stage ? 'false' : 'true'}">
+      <div class="sheet-overlay" data-close-prediction-review></div>
+      <div class="sheet-card predictions-sheet-card">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow">Revision final</p>
+            <h2>${stage ? escapeHtml(stageLabel(stage)) : 'Predicciones'}</h2>
+          </div>
+          <button class="sheet-close" type="button" aria-label="Cerrar" data-close-prediction-review>&times;</button>
+        </div>
+        <div class="sheet-scroll predictions-sheet-body">
+          <div class="prediction-review-list">
+            ${stageMatches.length ? renderPredictionReviewCards(stageMatches) : '<p class="empty-state">No hay predicciones listas para revisar.</p>'}
+          </div>
+          <div class="prediction-review-actions">
+            <button class="secondary-button" type="button" data-close-prediction-review ${saving ? 'disabled' : ''}>Revisar</button>
+            <button class="primary-button" type="button" data-confirm-stage-save="${escapeHtml(stage || '')}" ${saving || !stageMatches.length ? 'disabled' : ''}>${saving ? 'Guardando...' : 'Confirmar y guardar'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderMatch(match, groupTables, groupStatus, matchesByCode, compact, hideStageLabel = false, personalMode = false) {
-  const prediction = match.prediction;
+  const prediction = personalMode ? getPredictionDraft(match) : match.prediction;
+  const minimalPredictionCard = personalMode && !compact;
+  const isInvalidPrediction = personalMode && state.invalidPredictionMatchIds.includes(String(match._id));
+  const invalidReason = isInvalidPrediction ? getIncompletePredictionReason(match, prediction) : '';
   const metaStage = hideStageLabel
     ? ''
     : match.stage === 'group'
       ? `Grupo ${escapeHtml(match.group || '')}`
       : stageLabel(match.stage);
   const teamAContent = personalMode
-    ? renderPersonalTeam(match, 'A')
+    ? renderPersonalTeam(match, 'A', !minimalPredictionCard)
     : renderTeam(match.teamA, match.sourceA, groupTables, groupStatus, matchesByCode);
   const teamBContent = personalMode
-    ? renderPersonalTeam(match, 'B')
+    ? renderPersonalTeam(match, 'B', !minimalPredictionCard)
     : renderTeam(match.teamB, match.sourceB, groupTables, groupStatus, matchesByCode);
   const qualifierA = getPersonalResolvedTeam(match, 'A') || 'Equipo A';
   const qualifierB = getPersonalResolvedTeam(match, 'B') || 'Equipo B';
+  const dateLabel = minimalPredictionCard
+    ? new Intl.DateTimeFormat('es-CO', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(new Date(match.matchDate))
+    : formatDate(match.matchDate);
 
   return `
-    <article class="match-card ${compact ? 'match-row-card' : 'glass-card'}" data-match-id="${escapeHtml(match._id)}">
-      <div class="match-meta">
+    <article class="match-card ${compact ? 'match-row-card' : 'glass-card'} ${minimalPredictionCard ? 'prediction-minimal-card' : ''} ${isInvalidPrediction ? 'prediction-card-incomplete' : ''}" data-match-id="${escapeHtml(match._id)}">
+      <div class="match-meta ${minimalPredictionCard ? 'prediction-minimal-meta' : ''}">
         ${metaStage ? `<span>${metaStage}</span>` : ''}
-        <span>${formatDate(match.matchDate)}</span>
+        <span>${dateLabel}</span>
       </div>
       <div class="teams-row">
         ${teamAContent}
         <div class="score-chip">${match.resultSet ? `${match.scoreA}<span>-</span>${match.scoreB}` : 'VS'}</div>
         ${teamBContent}
       </div>
-      <p class="venue">${escapeHtml(match.venue || '')}</p>
+      ${minimalPredictionCard ? '' : `<p class="venue">${escapeHtml(match.venue || '')}</p>`}
       ${compact ? '' : `
-        <form class="prediction-form" data-prediction-form>
-          <input name="predictedScoreA" type="number" min="0" step="1" placeholder="A" value="${prediction?.predictedScoreA ?? ''}" ${match.locked ? 'disabled' : ''} required />
-          <input name="predictedScoreB" type="number" min="0" step="1" placeholder="B" value="${prediction?.predictedScoreB ?? ''}" ${match.locked ? 'disabled' : ''} required />
+      <div class="prediction-form ${minimalPredictionCard ? 'prediction-form-minimal' : ''} ${minimalPredictionCard && match.stage !== 'group' ? 'prediction-form-with-qualifier' : ''}">
+          <input name="predictedScoreA" data-prediction-input data-stage="${escapeHtml(match.stage)}" data-match-id="${escapeHtml(match._id)}" data-field="predictedScoreA" type="number" min="0" step="1" placeholder="A" value="${prediction?.predictedScoreA ?? ''}" ${match.locked ? 'disabled' : ''} />
+          <input name="predictedScoreB" data-prediction-input data-stage="${escapeHtml(match.stage)}" data-match-id="${escapeHtml(match._id)}" data-field="predictedScoreB" type="number" min="0" step="1" placeholder="B" value="${prediction?.predictedScoreB ?? ''}" ${match.locked ? 'disabled' : ''} />
           ${match.stage === 'group' ? '' : `
-            <select name="predictedQualifiedTeam" ${match.locked ? 'disabled' : ''}>
-              <option value="">Clasifica si hay empate</option>
+            <div class="prediction-qualified-wrap ${isPredictionTie(match, prediction) ? '' : 'hidden'}" data-prediction-qualified-wrap>
+              <select name="predictedQualifiedTeam" data-prediction-input data-prediction-qualified-select data-stage="${escapeHtml(match.stage)}" data-match-id="${escapeHtml(match._id)}" data-field="predictedQualifiedTeam" ${match.locked ? 'disabled' : ''}>
+              <option value="" ${!prediction?.predictedQualifiedTeam ? 'selected' : ''}>Seleccione el equipo que clasifica</option>
               <option value="teamA" ${prediction?.predictedQualifiedTeam === 'teamA' ? 'selected' : ''}>${escapeHtml(qualifierA)}</option>
               <option value="teamB" ${prediction?.predictedQualifiedTeam === 'teamB' ? 'selected' : ''}>${escapeHtml(qualifierB)}</option>
-            </select>
+              </select>
+            </div>
           `}
-          <button class="primary-button" type="submit" ${match.locked ? 'disabled' : ''}>${match.locked ? 'Bloqueado' : 'Guardar prediccion'}</button>
-        </form>
-        ${renderAdminResultForm(match)}
+        </div>
+        ${isInvalidPrediction ? `<p class="prediction-inline-warning">${escapeHtml(invalidReason)}</p>` : ''}
+        ${personalMode ? '' : renderAdminResultForm(match)}
       `}
     </article>
   `;
@@ -722,6 +1138,8 @@ function renderMatch(match, groupTables, groupStatus, matchesByCode, compact, hi
 
 function renderFixtureTeamsRow(match) {
   const centerValue = match.resultSet ? `${match.scoreA}-${match.scoreB}` : formatFixtureTime(match.matchDate);
+  const teamALabel = match.actualResolvedTeamA || (match.sourceA ? prettySourceLabel(match.sourceA) : match.teamA);
+  const teamBLabel = match.actualResolvedTeamB || (match.sourceB ? prettySourceLabel(match.sourceB) : match.teamB);
   const metaParts = [
     fixtureStageLabel(match.stage),
     match.stage === 'group' && match.group ? `Grupo ${escapeHtml(match.group)}` : '',
@@ -731,13 +1149,13 @@ function renderFixtureTeamsRow(match) {
   return `
     <div class="fixture-fifa-inner">
       <div class="fixture-fifa-team fixture-fifa-team-left">
-        <span class="fixture-fifa-team-name">${escapeHtml(match.teamA)}</span>
-        ${renderFlag(match.teamA)}
+        ${renderFlag(teamALabel)}
+        <span class="fixture-fifa-team-name">${escapeHtml(teamALabel)}</span>
       </div>
       <div class="fixture-fifa-kickoff">${escapeHtml(centerValue)}</div>
       <div class="fixture-fifa-team fixture-fifa-team-right">
-        ${renderFlag(match.teamB)}
-        <span class="fixture-fifa-team-name">${escapeHtml(match.teamB)}</span>
+        <span class="fixture-fifa-team-name">${escapeHtml(teamBLabel)}</span>
+        ${renderFlag(teamBLabel)}
       </div>
       <div class="fixture-fifa-meta">
         ${metaParts.join(' <span class="fixture-fifa-dot">·</span> ')}
@@ -793,25 +1211,30 @@ function renderMatchesSchedule(matches) {
 function renderStandings(groupTables) {
   return Object.entries(groupTables).map(([group, rows]) => `
     <section class="standings-group">
-      <h3>Grupo ${escapeHtml(group)}</h3>
       <div class="standings-header">
-        <span>Equipo</span><span>PJ</span><span>G</span><span>E</span><span>P</span><span>GF</span><span>GC</span><span>DG</span><strong>Pts</strong>
+        <div class="standings-group-title">Grupo ${escapeHtml(group)}</div>
+        <div class="standings-columns">
+          <span>PJ</span><span>G</span><span>E</span><span>P</span><span>GF</span><span>GC</span><span>DG</span><strong>Pts</strong>
+        </div>
       </div>
       ${rows.map((row, index) => `
         <div class="standings-row ${index < 2 ? 'qualified' : ''}">
           <div class="standings-team">
             <span class="rank">${index + 1}</span>
+            <span class="standings-indicator"></span>
             ${renderFlag(row.team)}
             <span>${escapeHtml(row.team)}</span>
           </div>
-          <span>${row.played}</span>
-          <span>${row.wins}</span>
-          <span>${row.draws}</span>
-          <span>${row.losses}</span>
-          <span>${row.goalsFor}</span>
-          <span>${row.goalsAgainst}</span>
-          <span>${row.diff}</span>
-          <strong>${row.points}</strong>
+          <div class="standings-columns">
+            <span>${row.played}</span>
+            <span>${row.wins}</span>
+            <span>${row.draws}</span>
+            <span>${row.losses}</span>
+            <span>${row.goalsFor}</span>
+            <span>${row.goalsAgainst}</span>
+            <span>${row.diff}</span>
+            <strong>${row.points}</strong>
+          </div>
         </div>
       `).join('')}
     </section>
@@ -830,24 +1253,211 @@ function renderPredictionsSections(matches, groupTables, groupStatus, matchesByC
     grouped.get(stage).push(match);
   });
 
-  return stageOrder
-    .filter((stage) => grouped.has(stage))
-    .map((stage) => {
+  const availableStages = stageOrder.filter((stage) => grouped.has(stage));
+
+  return `
+    ${availableStages.map((stage) => {
       const stageMatches = grouped.get(stage) || [];
+      const summary = getStagePredictionState(stageMatches);
 
       return `
-        <section class="prediction-stage">
+        <section class="prediction-stage" data-stage-section="${escapeHtml(stage)}">
           <header class="prediction-stage-header">
             <h3>${escapeHtml(stageLabel(stage))}</h3>
             <span>${stageMatches.length} partido${stageMatches.length === 1 ? '' : 's'}</span>
           </header>
+          ${renderPredictionProgress(stageMatches)}
           <div class="prediction-grid">
             ${stageMatches.map((match) => renderMatch(match, groupTables, groupStatus, matchesByCode, false, false, true)).join('')}
           </div>
+          <div class="prediction-stage-actions">
+            <button class="primary-button prediction-stage-save" type="button" data-stage-save-trigger="${escapeHtml(stage)}" ${summary.saved ? 'disabled' : ''}>
+              ${summary.saved ? 'Predicciones guardadas' : 'Guardar predicciones de esta fase'}
+            </button>
+          </div>
         </section>
       `;
-    })
-    .join('');
+    }).join('')}
+  `;
+}
+
+function renderPredictionStageNav(matches) {
+  const stageOrder = ['group', 'roundOf32', 'roundOf16', 'quarterfinal', 'semifinal', 'thirdPlace', 'final'];
+  const availableStages = stageOrder.filter((stage) => matches.some((match) => (match.stage || 'other') === stage));
+  const activeStage = state.activePredictionStage || availableStages[0] || '';
+
+  return `
+    <div class="prediction-stage-nav" aria-label="Acceso rapido a fases">
+      ${availableStages.map((stage) => `
+        <button class="prediction-stage-chip ${stage === activeStage ? 'is-active' : ''}" type="button" data-jump-stage="${escapeHtml(stage)}">${escapeHtml(stageNavLabel(stage))}</button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderMyPredictionsTable(predictions) {
+  if (!predictions.length) {
+    return '<p class="empty-state">Aun no tienes predicciones guardadas.</p>';
+  }
+
+  const stageOrder = {
+    group: 1,
+    roundOf32: 2,
+    roundOf16: 3,
+    quarterfinal: 4,
+    semifinal: 5,
+    thirdPlace: 6,
+    final: 7
+  };
+
+  const sorted = [...predictions].sort((a, b) => {
+    const rankDiff = (stageOrder[a.stage] || 99) - (stageOrder[b.stage] || 99);
+    if (rankDiff !== 0) return rankDiff;
+    return new Date(a.matchDate) - new Date(b.matchDate);
+  });
+
+  return `
+    <div class="my-predictions-table">
+      <div class="my-predictions-head">
+        <span>Partido</span>
+        <span>Mi pronostico</span>
+        <span>Pts</span>
+        <span>Estado</span>
+      </div>
+      ${sorted.map((item) => {
+        const label = item.code ? `${item.code} · ${stageLabel(item.stage)}` : stageLabel(item.stage);
+        const score = `${item.predictedScoreA}-${item.predictedScoreB}`;
+        const status = item.scored ? 'Calificada' : 'Pendiente';
+
+        return `
+          <div class="my-predictions-row">
+            <div class="my-predictions-match">
+              <strong>${escapeHtml(item.teamA)} vs ${escapeHtml(item.teamB)}</strong>
+              <span>${escapeHtml(label)}</span>
+            </div>
+            <div class="my-predictions-score">${escapeHtml(score)}</div>
+            <div class="my-predictions-points">${Number(item.points || 0)}</div>
+            <div class="my-predictions-status">${escapeHtml(status)}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderMyPredictionsCards(predictions) {
+  if (!predictions.length) {
+    return '<p class="empty-state">Aun no tienes predicciones guardadas.</p>';
+  }
+
+  const stageOrder = {
+    group: 1,
+    roundOf32: 2,
+    roundOf16: 3,
+    quarterfinal: 4,
+    semifinal: 5,
+    thirdPlace: 6,
+    final: 7
+  };
+
+  const sorted = [...predictions].sort((a, b) => {
+    const rankDiff = (stageOrder[a.stage] || 99) - (stageOrder[b.stage] || 99);
+    if (rankDiff !== 0) return rankDiff;
+    return new Date(a.matchDate) - new Date(b.matchDate);
+  });
+
+  return `
+    <div class="my-predictions-cards">
+      ${sorted.map((item) => {
+        const label = item.code ? `${item.code} · ${stageLabel(item.stage)}` : stageLabel(item.stage);
+        const score = `${item.predictedScoreA}-${item.predictedScoreB}`;
+        const status = item.scored ? 'Calificada' : 'Pendiente';
+        const match = state.matches.find((entry) => String(entry._id) === String(item.matchId));
+        const teamALabel = match
+          ? (match.actualResolvedTeamA || match.predictedResolvedTeamA || getPredictionDisplayTeamLabel(match, 'A'))
+          : (item.teamA && item.teamA !== 'Por definir' ? item.teamA : getPredictionDisplayTeamLabel(item, 'A'));
+        const teamBLabel = match
+          ? (match.actualResolvedTeamB || match.predictedResolvedTeamB || getPredictionDisplayTeamLabel(match, 'B'))
+          : (item.teamB && item.teamB !== 'Por definir' ? item.teamB : getPredictionDisplayTeamLabel(item, 'B'));
+        const qualifier =
+          item.stage !== 'group' && Number(item.predictedScoreA) === Number(item.predictedScoreB) && item.predictedQualifiedTeam
+            ? `Clasifica ${item.predictedQualifiedTeam === 'teamA' ? teamALabel : teamBLabel}`
+            : '';
+
+        return `
+          <article class="fixture-fifa-card my-prediction-card">
+            <div class="match-meta my-prediction-meta">
+              <span>${escapeHtml(label)}</span>
+              <span>${escapeHtml(status)}</span>
+            </div>
+            <div class="fixture-fifa-inner my-prediction-inner">
+              <div class="fixture-fifa-team fixture-fifa-team-left">
+                ${renderFlag(teamALabel)}
+                <span class="fixture-fifa-team-name">${escapeHtml(teamALabel)}</span>
+              </div>
+              <div class="fixture-fifa-kickoff my-prediction-score">${escapeHtml(score)}</div>
+              <div class="fixture-fifa-team fixture-fifa-team-right">
+                <span class="fixture-fifa-team-name">${escapeHtml(teamBLabel)}</span>
+                ${renderFlag(teamBLabel)}
+              </div>
+              <div class="fixture-fifa-meta my-prediction-foot">
+                <span>Pts ${Number(item.points || 0)}</span>
+                ${qualifier ? `<span class="fixture-fifa-dot">·</span><span>${escapeHtml(qualifier)}</span>` : ''}
+              </div>
+            </div>
+          </article>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderMyPredictionsSummary(predictions) {
+  const total = predictions.length;
+  const scored = predictions.filter((item) => item.scored).length;
+  const pending = total - scored;
+  const totalPoints = predictions.reduce((sum, item) => sum + Number(item.points || 0), 0);
+  const lastPrediction = total
+    ? [...predictions].sort((a, b) => new Date(b.matchDate) - new Date(a.matchDate))[0]
+    : null;
+
+  return `
+    <button class="my-predictions-summary" type="button" data-open-my-predictions aria-haspopup="dialog">
+      <div class="my-predictions-summary-main">
+        <strong>Mis predicciones</strong>
+        <span>${total ? `${total} guardada${total === 1 ? '' : 's'}` : 'Aun no has guardado predicciones'}</span>
+      </div>
+      <div class="my-predictions-summary-stats">
+        <span><strong>${total}</strong> partidos</span>
+        <span><strong>${pending}</strong> pendientes</span>
+        <span><strong>${totalPoints}</strong> pts</span>
+      </div>
+      <div class="my-predictions-summary-foot">
+        <span>${lastPrediction ? `Ultima: ${escapeHtml(lastPrediction.teamA)} vs ${escapeHtml(lastPrediction.teamB)}` : 'Toca aqui para ver el detalle cuando quieras'}</span>
+        <span class="my-predictions-summary-link">Ver detalle</span>
+      </div>
+    </button>
+  `;
+}
+
+function renderMyPredictionsModal(predictions) {
+  return `
+    <div class="sheet-shell hidden" id="myPredictionsModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="myPredictionsTitle">
+      <div class="sheet-overlay" data-close-my-predictions></div>
+      <div class="sheet-card predictions-sheet-card">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow">Predicciones guardadas</p>
+            <h3 id="myPredictionsTitle">Mis predicciones</h3>
+          </div>
+          <button class="sheet-close" type="button" aria-label="Cerrar" data-close-my-predictions>&times;</button>
+        </div>
+        <div class="sheet-scroll predictions-sheet-body">
+          ${renderMyPredictionsCards(predictions)}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 const bracketMatchLabels = {
@@ -963,13 +1573,13 @@ function bracketSlot(stage, index) {
 }
 
 function renderBracketCard(match, groupTables, groupStatus, matchesByCode) {
-  const teamA = match.predictedResolvedTeamA || match.clientPredictedResolvedTeamA || (
+  const teamA = match.actualResolvedTeamA || (
     match.sourceA
       ? resolveSource(match.sourceA, groupTables, groupStatus, matchesByCode)
       : match.teamA
   );
 
-  const teamB = match.predictedResolvedTeamB || match.clientPredictedResolvedTeamB || (
+  const teamB = match.actualResolvedTeamB || (
     match.sourceB
       ? resolveSource(match.sourceB, groupTables, groupStatus, matchesByCode)
       : match.teamB
@@ -994,13 +1604,13 @@ function renderBracketCard(match, groupTables, groupStatus, matchesByCode) {
         </div>
 
         <div class="bracket-team-row ${winnerA ? 'winner' : ''}">
-          <span class="bracket-flag-placeholder"></span>
+          ${teamA ? renderFlag(teamA) : '<span class="bracket-flag-placeholder"></span>'}
           <span class="bracket-team-name">${escapeHtml(labelA)}</span>
           ${match.resultSet ? `<strong class="bracket-score">${match.scoreA}</strong>` : ''}
         </div>
 
         <div class="bracket-team-row ${winnerB ? 'winner' : ''}">
-          <span class="bracket-flag-placeholder"></span>
+          ${teamB ? renderFlag(teamB) : '<span class="bracket-flag-placeholder"></span>'}
           <span class="bracket-team-name">${escapeHtml(labelB)}</span>
           ${match.resultSet ? `<strong class="bracket-score">${match.scoreB}</strong>` : ''}
         </div>
@@ -1112,6 +1722,72 @@ function renderBracketLines() {
   `;
 }
 
+function renderDashboardStats(matches, myPredictions) {
+  const totalMatches = matches.length;
+  const openPredictions = matches.filter((match) => !match.locked).length;
+  const savedPredictions = myPredictions.length;
+
+  return `
+    <article class="stat-card">
+      <span>${totalMatches}</span>
+      <p>Partidos</p>
+    </article>
+    <article class="stat-card">
+      <span>${openPredictions}</span>
+      <p>Por predecir</p>
+    </article>
+    <article class="stat-card">
+      <span>${savedPredictions}</span>
+      <p>Mis picks</p>
+    </article>
+  `;
+}
+
+function renderNextMatchCard(matches) {
+  const nextMatch = [...matches]
+    .filter((match) => new Date(match.matchDate) > new Date())
+    .sort((a, b) => new Date(a.matchDate) - new Date(b.matchDate))[0];
+
+  if (!nextMatch) return '';
+
+  const kickoff = new Intl.DateTimeFormat('es-CO', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(new Date(nextMatch.matchDate));
+
+  const dateMeta = new Intl.DateTimeFormat('es-CO', {
+    day: 'numeric',
+    month: 'short'
+  }).format(new Date(nextMatch.matchDate));
+
+  const groupMeta = nextMatch.stage === 'group'
+    ? `Grupo ${nextMatch.group || ''}`
+    : stageLabel(nextMatch.stage);
+
+  return `
+    <section class="next-match-card">
+      <div class="next-match-badge">
+        <span class="next-match-pulse"></span>
+        Proximo partido
+      </div>
+      <div class="next-match-layout">
+        <div class="next-match-team">
+          ${renderFlag(nextMatch.teamA)}
+          <span>${escapeHtml(nextMatch.teamA)}</span>
+        </div>
+        <div class="next-match-center">
+          <strong>${escapeHtml(kickoff)}</strong>
+          <span>${escapeHtml(dateMeta)} · ${escapeHtml(groupMeta)}</span>
+        </div>
+        <div class="next-match-team">
+          ${renderFlag(nextMatch.teamB)}
+          <span>${escapeHtml(nextMatch.teamB)}</span>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function orderByCode(matches, codes) {
   const map = new Map(matches.map((match) => [match.code, match]));
 
@@ -1122,7 +1798,8 @@ function orderByCode(matches, codes) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function renderFixture(matches) {
+function renderFixture(matches, myPredictions = []) {
+  const dashboardNextMatch = document.getElementById('dashboardNextMatch');
   const groupsBoard      = document.getElementById('groupsBoard');
   const matchesBoard     = document.getElementById('matchesBoard');
   const predictionsBoard = document.getElementById('predictionsBoard');
@@ -1146,43 +1823,33 @@ function renderFixture(matches) {
   const thirdPlace      = knockoutMatches.filter((m) => m.stage === 'thirdPlace');
   const finals          = knockoutMatches.filter((m) => m.stage === 'final');
 
+  if (dashboardNextMatch) {
+    dashboardNextMatch.innerHTML = renderNextMatchCard(matches);
+  }
+
   groupsBoard.innerHTML = `
-    <section class="fifa-panel">
-      <div class="panel-title">
-        <div>
-          <h2>Posiciones</h2>
-          <p>Temporada <strong>2026</strong></p>
-        </div>
-      </div>
-      <div class="standings-grid">${renderStandings(groupTables)}</div>
-    </section>
+    <div class="standings-grid">${renderStandings(groupTables)}</div>
   `;
 
   matchesBoard.innerHTML = `
-    <section class="fifa-panel fixture-panel">
-      <div class="panel-title">
-        <div>
-          <h2>Partidos</h2>
-          <p>Calendario completo del torneo</p>
-        </div>
-      </div>
+    <section class="screen-section">
       ${renderMatchesSchedule(matches)}
     </section>
   `;
 
   predictionsBoard.innerHTML = `
-    <section class="fifa-panel">
-      <div class="panel-title">
-        <div>
-          <h2>Predicciones</h2>
-          <p>Partidos abiertos para guardar marcador</p>
-        </div>
-      </div>
+    <section class="screen-section">
+      ${renderPredictionStageNav(predictionMatches)}
+      <section class="my-predictions-stage">
+        ${renderMyPredictionsSummary(myPredictions)}
+      </section>
       <div class="prediction-sections">
         ${predictionMatches.length
           ? renderPredictionsSections(predictionMatches, groupTables, groupStatus, matchesByCode)
           : '<p class="empty-state">No hay predicciones abiertas.</p>'}
       </div>
+      ${renderMyPredictionsModal(myPredictions)}
+      ${renderPredictionReviewSheet(predictionMatches)}
     </section>
   `;
 
@@ -1238,7 +1905,7 @@ function renderFixture(matches) {
   ];
 
   knockoutBoard.innerHTML = `
-    <section class="fifa-panel bracket-panel">
+    <section class="screen-section bracket-panel">
       <div class="bracket-canvas">
         <div class="bracket-title-row">
           <span>Dieciseisavos de final</span>
@@ -1272,19 +1939,425 @@ function renderFixture(matches) {
 }
 
 function setupSharedLayout() {
-  const userLabel    = document.getElementById('currentUser');
-  const logoutButton = document.getElementById('logoutButton');
-  if (userLabel)    userLabel.textContent = state.user?.username || '';
-  if (logoutButton) logoutButton.addEventListener('click', () => {
-    clearSession();
-    window.location.href = 'index.html';
+  const userLabel = document.getElementById('currentUser');
+  const userAvatar = document.getElementById('userAvatar');
+  if (userLabel) userLabel.textContent = state.user?.username || '';
+  if (userAvatar) userAvatar.textContent = getUserInitials(state.user?.username || '');
+  updateAdminResetVisibility();
+  ensureScoringModal();
+  ensurePredictionsHelpModal();
+  initSharedShell();
+}
+
+function updateAdminResetVisibility() {
+  document.querySelectorAll('[data-admin-reset-pruebas]').forEach((button) => {
+    button.classList.toggle('hidden', !state.user?.isAdmin);
   });
+}
+
+function getUserInitials(username) {
+  return String(username || 'PM')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] || '')
+    .join('')
+    .toUpperCase() || 'PM';
+}
+
+function openMoreSheet() {
+  const sheet = document.getElementById('moreSheet');
+  if (!sheet) return;
+  sheet.classList.remove('hidden');
+  sheet.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+}
+
+function closeMoreSheet() {
+  const sheet = document.getElementById('moreSheet');
+  if (!sheet) return;
+  sheet.classList.add('hidden');
+  sheet.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+}
+
+function updateBottomNavState() {
+  document.querySelectorAll('[data-bottom-nav]').forEach((item) => item.classList.remove('is-active'));
+
+  const navKey = document.getElementById('leaderboardList')
+    ? 'leaderboard'
+    : 'more';
+
+  const activeItem = document.querySelector(`[data-bottom-nav="${navKey}"]`);
+  if (activeItem) activeItem.classList.add('is-active');
+}
+
+function initSharedShell() {
+  if (document.body.dataset.sharedShellReady === 'true') return;
+  document.body.dataset.sharedShellReady = 'true';
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('[data-open-scoring]')) {
+      closeMoreSheet();
+      openScoringModal();
+      return;
+    }
+
+    if (event.target.closest('[data-open-predictions-help]')) {
+      closeMoreSheet();
+      openPredictionsHelpModal();
+      return;
+    }
+
+    if (event.target.closest('[data-close-scoring]')) {
+      closeScoringModal();
+      return;
+    }
+
+    if (event.target.closest('[data-close-predictions-help]')) {
+      closePredictionsHelpModal();
+      return;
+    }
+
+    if (event.target.closest('[data-open-more]')) {
+      openMoreSheet();
+      return;
+    }
+
+    if (event.target.closest('[data-close-more]')) {
+      closeMoreSheet();
+      return;
+    }
+
+    if (event.target.closest('[data-logout]')) {
+      clearSession();
+      window.location.href = 'index.html';
+      return;
+    }
+
+    if (event.target.closest('[data-admin-reset-pruebas]')) {
+      if (!state.user?.isAdmin) return;
+      const confirmed = window.confirm('Esto borrara resultados reales, predicciones y puntos. El fixture se mantendra. Continuar?');
+      if (!confirmed) return;
+      closeMoreSheet();
+      apiFetch('/admin/reset-pruebas', { method: 'POST' })
+        .then(async () => {
+          toast('Datos de prueba reiniciados.');
+          await loadMatches();
+          if (document.getElementById('leaderboardList')) {
+            const list = document.getElementById('leaderboardList');
+            const emptyState = document.getElementById('emptyLeaderboard');
+            if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+          }
+        })
+        .catch((error) => {
+          toast(error.message || 'No se pudo reiniciar la informacion.', 'error');
+        });
+      return;
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeScoringModal();
+      closePredictionsHelpModal();
+      closeMoreSheet();
+    }
+  });
+}
+
+function renderScoringModal() {
+  return `
+    <div class="modal-shell hidden" id="scoringModal" role="dialog" aria-modal="true" aria-labelledby="scoringModalTitle">
+      <div class="modal-backdrop" data-close-scoring></div>
+      <div class="modal-card scoring-modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Sistema de calificacion</p>
+            <h3 id="scoringModalTitle">Como se calculan tus puntos</h3>
+          </div>
+          <button class="modal-close" type="button" aria-label="Cerrar" data-close-scoring>&times;</button>
+        </div>
+        <div class="modal-body scoring-modal-body">
+          <section class="scoring-block">
+            <h4>Puntos por partido</h4>
+            <ul class="scoring-list">
+              <li><strong>3 puntos</strong> por acertar el marcador exacto.</li>
+              <li><strong>1 punto</strong> por acertar ganador o empate sin clavar el marcador.</li>
+              <li><strong>0 puntos</strong> si el resultado no coincide.</li>
+            </ul>
+          </section>
+          <section class="scoring-block">
+            <h4>Bonos del torneo</h4>
+            <ul class="scoring-list">
+              <li><strong>Grupos:</strong> 2 puntos por cada clasificado correcto a octavos y 1 punto extra si tambien aciertas su posicion exacta.</li>
+              <li><strong>Cruces:</strong> se suman bonos por ubicar equipos correctos en rondas avanzadas.</li>
+              <li><strong>Campeon:</strong> acertar el ganador final suma un bono extra.</li>
+            </ul>
+            <div class="scoring-chip-row">
+              <span class="scoring-chip">Octavos: 2</span>
+              <span class="scoring-chip">Cuartos: 3</span>
+              <span class="scoring-chip">Semifinal: 5</span>
+              <span class="scoring-chip">Final: 8</span>
+              <span class="scoring-chip">Tercer puesto: 2</span>
+              <span class="scoring-chip">Campeon: 12</span>
+            </div>
+          </section>
+          <section class="scoring-block">
+            <h4>Cuando se actualiza</h4>
+            <p>Tu puntaje se recalcula cuando el admin carga resultados oficiales. La tabla general acumula partidos mas bonos.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPredictionsHelpModal() {
+  return `
+    <div class="modal-shell hidden" id="predictionsHelpModal" role="dialog" aria-modal="true" aria-labelledby="predictionsHelpTitle">
+      <div class="modal-backdrop" data-close-predictions-help></div>
+      <div class="modal-card scoring-modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Guia rapida</p>
+            <h3 id="predictionsHelpTitle">Como llenar tus predicciones</h3>
+          </div>
+          <button class="modal-close" type="button" aria-label="Cerrar" data-close-predictions-help>&times;</button>
+        </div>
+        <div class="modal-body scoring-modal-body">
+          <section class="help-step">
+            <div class="help-step-head">
+              <h4>1. Fase de grupos</h4>
+              <p>Empieza por los partidos de grupos y escribe tu marcador normal.</p>
+            </div>
+            <img class="help-step-image" src="assets/help/step-1-group.png" alt="Ejemplo de prediccion en fase de grupos" loading="lazy" />
+          </section>
+          <section class="help-step">
+            <div class="help-step-head">
+              <h4>2. Cruces de eliminatoria</h4>
+              <p>En 16avos y fases siguientes, si empatan, selecciona el equipo que clasifica.</p>
+            </div>
+            <img class="help-step-image" src="assets/help/step-2-round-of-16.png" alt="Ejemplo de prediccion en dieciseisavos de final" loading="lazy" />
+          </section>
+          <section class="help-step">
+            <div class="help-step-head">
+              <h4>3. Revisa antes de guardar</h4>
+              <p>Antes de confirmar, revisa el resumen final con todos tus cruces y marcadores.</p>
+            </div>
+            <img class="help-step-image" src="assets/help/step-3-review.png" alt="Ejemplo de revison final antes de guardar" loading="lazy" />
+          </section>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function ensureScoringModal() {
+  if (document.getElementById('scoringModal')) return;
+  document.body.insertAdjacentHTML('beforeend', renderScoringModal());
+}
+
+function ensurePredictionsHelpModal() {
+  if (document.getElementById('predictionsHelpModal')) return;
+  document.body.insertAdjacentHTML('beforeend', renderPredictionsHelpModal());
+}
+
+function openScoringModal() {
+  const modal = document.getElementById('scoringModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  document.body.classList.add('modal-open');
+}
+
+function closeScoringModal() {
+  const modal = document.getElementById('scoringModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  document.body.classList.remove('modal-open');
+}
+
+function openPredictionsHelpModal() {
+  const modal = document.getElementById('predictionsHelpModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  document.body.classList.add('modal-open');
+}
+
+function closePredictionsHelpModal() {
+  const modal = document.getElementById('predictionsHelpModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  document.body.classList.remove('modal-open');
+}
+
+function openMyPredictionsModal() {
+  const modal = document.getElementById('myPredictionsModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+}
+
+function closeMyPredictionsModal() {
+  const modal = document.getElementById('myPredictionsModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+}
+
+function closePredictionReviewSheet() {
+  state.pendingPredictionStage = null;
+  state.savingPredictionStage = null;
+  document.body.classList.remove('modal-open');
+  renderFixture(state.matches, state.myPredictions);
+}
+
+function openPredictionReviewSheet(stage) {
+  state.pendingPredictionStage = stage;
+  document.body.classList.add('modal-open');
+  renderFixture(state.matches, state.myPredictions);
+}
+
+function refreshPredictionStageSection(stage) {
+  const section = document.querySelector(`[data-stage-section="${stage}"]`);
+  if (!section) return;
+
+  const stageMatches = state.matches.filter((match) => match.stage === stage && !match.locked);
+  const summary = getStagePredictionState(stageMatches);
+  const progress = section.querySelector('[data-prediction-progress]');
+  const actionButton = section.querySelector('[data-stage-save-trigger]');
+
+  if (progress) {
+    progress.outerHTML = renderPredictionProgress(stageMatches);
+  }
+
+  if (actionButton) {
+    actionButton.disabled = summary.saved;
+    actionButton.textContent = summary.saved ? 'Predicciones guardadas' : 'Guardar predicciones de esta fase';
+  }
+}
+
+function updatePredictionDraftInput(target, { commit = false } = {}) {
+  const matchId = target.dataset.matchId;
+  const field = target.dataset.field;
+  const stage = target.dataset.stage;
+  if (!matchId || !field || !stage) return;
+
+  const currentDraft = state.predictionDrafts[matchId] || {
+    predictedScoreA: '',
+    predictedScoreB: '',
+    predictedQualifiedTeam: ''
+  };
+
+  state.predictionDrafts[matchId] = {
+    ...currentDraft,
+    [field]: target.value
+  };
+
+  const match = state.matches.find((item) => String(item._id) === String(matchId));
+  const updatedDraft = state.predictionDrafts[matchId];
+  if (match && match.stage !== 'group') {
+    if (field === 'predictedScoreA' || field === 'predictedScoreB') {
+      const scoreA = Number(updatedDraft.predictedScoreA);
+      const scoreB = Number(updatedDraft.predictedScoreB);
+      if (Number.isInteger(scoreA) && Number.isInteger(scoreB) && scoreA !== scoreB) {
+        updatedDraft.predictedQualifiedTeam = '';
+      }
+    }
+  }
+
+  state.invalidPredictionMatchIds = state.invalidPredictionMatchIds.filter((id) => id !== String(matchId));
+  syncPredictionQualifiedField(matchId);
+
+  if (state.pendingPredictionStage === stage) {
+    state.pendingPredictionStage = null;
+    document.body.classList.remove('modal-open');
+  }
+
+  if (commit) {
+    renderFixture(state.matches, state.myPredictions);
+  }
+}
+
+function handlePredictionStageSaveRequest(stage) {
+  const stageMatches = state.matches.filter((match) => match.stage === stage && !match.locked);
+  const summary = getStagePredictionState(stageMatches);
+
+  if (summary.missing > 0) {
+    const incompleteMatches = stageMatches.filter((match) => !isPredictionDraftComplete(match));
+    state.invalidPredictionMatchIds = incompleteMatches.map((match) => String(match._id));
+    renderFixture(state.matches, state.myPredictions);
+
+    const firstMissing = incompleteMatches[0];
+    if (firstMissing) {
+      window.setTimeout(() => {
+        const firstMissingCard = document.querySelector(`[data-match-id="${String(firstMissing._id)}"]`);
+        firstMissingCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 0);
+    }
+
+    const previewNames = incompleteMatches
+      .slice(0, 2)
+      .map((match) => `${getPredictionMatchLabel(match)} (${getIncompletePredictionReason(match)})`)
+      .join(', ');
+
+    toast(
+      summary.missing === 1
+        ? `Falta completar ${previewNames}.`
+        : `Faltan ${summary.missing} partidos por completar: ${previewNames}${incompleteMatches.length > 2 ? '...' : ''}.`,
+      'error'
+    );
+    return;
+  }
+
+  openPredictionReviewSheet(stage);
+}
+
+async function confirmPredictionStageSave(stage) {
+  const stageMatches = state.matches.filter((match) => match.stage === stage && !match.locked);
+  if (!stageMatches.length) return;
+
+  state.savingPredictionStage = stage;
+  renderFixture(state.matches, state.myPredictions);
+
+  try {
+    for (const match of stageMatches) {
+      const payload = normalizeDraftPayload(match, getPredictionDraft(match));
+      if (!payload) {
+        throw new Error('Hay predicciones incompletas en esta fase.');
+      }
+
+      await apiFetch(`/predictions/${match._id}`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    }
+
+    toast('Predicciones guardadas.');
+    state.invalidPredictionMatchIds = [];
+    state.pendingPredictionStage = null;
+    state.savingPredictionStage = null;
+    document.body.classList.remove('modal-open');
+    await loadMatches();
+  } catch (error) {
+    state.savingPredictionStage = null;
+    renderFixture(state.matches, state.myPredictions);
+    toast(error.message || 'No se pudieron guardar las predicciones.', 'error');
+  }
 }
 
 async function loadMatches() {
   try {
-    state.matches = await apiFetch('/matches');
-    renderFixture(state.matches);
+    const [matches, myPredictions] = await Promise.all([
+      apiFetch('/matches'),
+      apiFetch('/predictions/me')
+    ]);
+    state.matches = matches;
+    state.myPredictions = myPredictions;
+    syncPredictionDrafts(matches);
+    renderFixture(state.matches, state.myPredictions);
   } catch (error) {
     if (error.status === 401) {
       clearSession();
@@ -1293,7 +2366,9 @@ async function loadMatches() {
       return;
     }
     state.matches = [];
-    renderFixture(state.matches);
+    state.myPredictions = [];
+    state.predictionDrafts = {};
+    renderFixture(state.matches, state.myPredictions);
     toast(error.message || 'No se pudo cargar el API.', 'error');
   }
 }
@@ -1302,19 +2377,29 @@ function initDashboardPage() {
   if (!document.getElementById('groupsBoard')) return;
   if (!requireAuth()) return;
 
+  const requestedView = new URLSearchParams(window.location.search).get('view');
+  if (['standings', 'matches', 'predictions', 'bracket'].includes(requestedView)) {
+    state.activeView = requestedView;
+  }
+
   setupSharedLayout();
 
   const adminPanel   = document.getElementById('adminPanel');
   const matchesBoard = document.getElementById('matchesBoard');
   const tabs         = document.querySelectorAll('[data-view]');
 
+  const syncActiveViewControls = () => {
+    tabs.forEach((item) => item.classList.toggle('active', item.dataset.view === state.activeView));
+    updateBottomNavState();
+  };
+
   if (state.user?.isAdmin && adminPanel) adminPanel.classList.remove('hidden');
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
       state.activeView = tab.dataset.view;
-      tabs.forEach((item) => item.classList.toggle('active', item === tab));
-      renderFixture(state.matches);
+      syncActiveViewControls();
+      renderFixture(state.matches, state.myPredictions);
     });
   });
 
@@ -1324,30 +2409,79 @@ function initDashboardPage() {
       if (!switchButton) return;
 
       const targetView = switchButton.dataset.switchView;
-      const targetTab = Array.from(tabs).find((tab) => tab.dataset.view === targetView);
-      if (!targetTab) return;
+      if (!['standings', 'matches', 'predictions', 'bracket'].includes(targetView)) return;
 
       state.activeView = targetView;
-      tabs.forEach((item) => item.classList.toggle('active', item === targetTab));
-      renderFixture(state.matches);
+      syncActiveViewControls();
+      renderFixture(state.matches, state.myPredictions);
     });
   }
 
-  document.addEventListener('submit', async (event) => {
-    const predictionForm = event.target.closest('[data-prediction-form]');
-    if (!predictionForm) return;
-    event.preventDefault();
-    const card = event.target.closest('[data-match-id]');
-    if (!card) return;
-    try {
-      await apiFetch(`/predictions/${card.dataset.matchId}`, {
-        method: 'POST',
-        body: JSON.stringify(Object.fromEntries(new FormData(predictionForm)))
-      });
-      toast('Prediccion guardada.');
-      loadMatches();
-    } catch (error) {
-      toast(error.message, 'error');
+  document.querySelectorAll('[data-nav-view]').forEach((control) => {
+    control.addEventListener('click', () => {
+      const targetView = control.dataset.navView;
+      if (!['standings', 'matches', 'predictions', 'bracket'].includes(targetView)) return;
+      state.activeView = targetView;
+      syncActiveViewControls();
+      closeMoreSheet();
+      renderFixture(state.matches, state.myPredictions);
+    });
+  });
+
+  document.addEventListener('input', (event) => {
+    const input = event.target.closest('[data-prediction-input]');
+    if (!input) return;
+    updatePredictionDraftInput(input, { commit: false });
+  });
+
+  document.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-prediction-input]');
+    if (!input) return;
+    updatePredictionDraftInput(input, { commit: true });
+  });
+
+  document.addEventListener('click', (event) => {
+    const jumpButton = event.target.closest('[data-jump-stage]');
+    if (!jumpButton) return;
+
+    const stage = jumpButton.dataset.jumpStage;
+    const section = document.querySelector(`[data-stage-section="${stage}"]`);
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('[data-open-my-predictions]')) {
+      openMyPredictionsModal();
+      return;
+    }
+
+    if (event.target.closest('[data-close-my-predictions]')) {
+      closeMyPredictionsModal();
+      return;
+    }
+
+    const stageSaveButton = event.target.closest('[data-stage-save-trigger]');
+    if (stageSaveButton) {
+      handlePredictionStageSaveRequest(stageSaveButton.dataset.stageSaveTrigger);
+      return;
+    }
+
+    if (event.target.closest('[data-close-prediction-review]')) {
+      closePredictionReviewSheet();
+      return;
+    }
+
+    const confirmStageButton = event.target.closest('[data-confirm-stage-save]');
+    if (confirmStageButton) {
+      confirmPredictionStageSave(confirmStageButton.dataset.confirmStageSave);
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeScoringModal();
+      closeMyPredictionsModal();
+      closePredictionReviewSheet();
     }
   });
 
@@ -1364,12 +2498,13 @@ function initDashboardPage() {
         body: JSON.stringify(Object.fromEntries(new FormData(resultForm)))
       });
       toast('Resultado guardado.');
-      loadMatches();
+      await loadMatches();
     } catch (error) {
       toast(error.message, 'error');
     }
   });
 
+  syncActiveViewControls();
   loadMatches();
 }
 
@@ -1421,6 +2556,35 @@ function initAuthPage() {
 
 }
 
+async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
+  if (!list || !emptyState) return;
+
+  try {
+    const leaderboard = await apiFetch('/leaderboard');
+    const maxPoints   = Math.max(...leaderboard.map((row) => row.points), 1);
+    list.innerHTML = leaderboard.map((row, index) => {
+      const percent = Math.max((row.points / maxPoints) * 100, 6);
+      return `
+        <div class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}" style="animation-delay:${index * 45}ms">
+          <div class="rank-number">${row.rank}</div>
+          <div class="leaderboard-user">
+            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' Â· tu' : ''}</div>
+            <div class="points-track"><span style="width:${percent}%"></span></div>
+          </div>
+          <div class="leaderboard-points">${row.points} pts</div>
+        </div>
+      `;
+    }).join('');
+    emptyState.classList.toggle('hidden', leaderboard.length > 0);
+  } catch (error) {
+    list.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    if (!silent) {
+      toast(error.message || 'No se pudo cargar la tabla.', 'error');
+    }
+  }
+}
+
 async function initLeaderboardPage() {
   const list       = document.getElementById('leaderboardList');
   const emptyState = document.getElementById('emptyLeaderboard');
@@ -1428,6 +2592,22 @@ async function initLeaderboardPage() {
   if (!requireAuth()) return;
 
   setupSharedLayout();
+  updateBottomNavState();
+
+  await loadLeaderboard(list, emptyState);
+
+  const refreshLeaderboard = () => loadLeaderboard(list, emptyState, { silent: true });
+  const refreshInterval = window.setInterval(() => {
+    if (document.hidden) return;
+    refreshLeaderboard();
+  }, 15000);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshLeaderboard();
+  });
+  window.addEventListener('focus', refreshLeaderboard);
+  window.addEventListener('beforeunload', () => window.clearInterval(refreshInterval), { once: true });
+  return;
 
   try {
     const leaderboard = await apiFetch('/leaderboard');

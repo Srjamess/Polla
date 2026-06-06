@@ -7,7 +7,12 @@
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
     "preview": "node scripts/static-preview.js",
-    "seed:matches": "node scripts/seed-matches.js"
+    "seed:matches": "node scripts/seed-matches.js",
+    "seed:groups": "node scripts/seed-groups.js",
+    "reset:test": "node scripts/reset-test.js",
+    "reset:pruebas": "node scripts/reset-pruebas.js",
+    "scenario:four-users": "node scripts/scenario-four-users.js",
+    "seed:james-s": "node scripts/seed-james-s.js"
   },
   "keywords": [
     "world-cup",

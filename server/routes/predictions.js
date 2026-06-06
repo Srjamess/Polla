@@ -8,6 +8,46 @@ const router = express.Router();
 
 router.use(authenticate);
 
+router.get('/me', async (req, res) => {
+  try {
+    const predictions = await Prediction.find({ user: req.user._id })
+      .populate('match')
+      .sort({ createdAt: -1 });
+
+    const data = predictions
+      .filter((prediction) => prediction.match)
+      .map((prediction) => {
+        const match = prediction.match;
+
+        return {
+          id: prediction._id,
+          matchId: match._id,
+          code: match.code || '',
+          stage: match.stage || '',
+          group: match.group || '',
+          matchDate: match.matchDate,
+          teamA: match.teamA,
+          teamB: match.teamB,
+          sourceA: match.sourceA || '',
+          sourceB: match.sourceB || '',
+          venue: match.venue || '',
+          resultSet: Boolean(match.resultSet),
+          scoreA: match.resultSet ? match.scoreA : null,
+          scoreB: match.resultSet ? match.scoreB : null,
+          predictedScoreA: prediction.predictedScoreA,
+          predictedScoreB: prediction.predictedScoreB,
+          predictedQualifiedTeam: prediction.predictedQualifiedTeam || '',
+          points: prediction.points || 0,
+          scored: Boolean(prediction.scored)
+        };
+      });
+
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ message: 'Could not fetch predictions.' });
+  }
+});
+
 router.post('/:matchId', async (req, res) => {
   try {
     const { predictedScoreA, predictedScoreB, predictedQualifiedTeam } = req.body;
