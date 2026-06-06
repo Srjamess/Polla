@@ -1839,10 +1839,10 @@ function renderFixture(matches, myPredictions = []) {
 
   predictionsBoard.innerHTML = `
     <section class="screen-section">
-      ${renderPredictionStageNav(predictionMatches)}
       <section class="my-predictions-stage">
         ${renderMyPredictionsSummary(myPredictions)}
       </section>
+      ${renderPredictionStageNav(predictionMatches)}
       <div class="prediction-sections">
         ${predictionMatches.length
           ? renderPredictionsSections(predictionMatches, groupTables, groupStatus, matchesByCode)

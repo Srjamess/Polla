@@ -424,6 +424,16 @@ input[type="number"]::-webkit-inner-spin-button {
   margin-bottom: 16px;
 }
 
+#predictionsBoard,
+#predictionsBoard .screen-section,
+#predictionsBoard .prediction-sections,
+#predictionsBoard .prediction-stage,
+#predictionsBoard .my-predictions-stage {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .fixture-day-list {
   display: grid;
   gap: 10px;
@@ -783,8 +793,9 @@ input[type="number"]::-webkit-inner-spin-button {
   gap: 0;
   overflow-x: auto;
   scrollbar-width: none;
-  margin: 0 -18px 14px;
-  padding: 0 18px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 0;
   background: var(--bg);
   border-bottom: 0.5px solid var(--border);
 }
@@ -829,9 +840,6 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .prediction-progress {
-  position: sticky;
-  top: 104px;
-  z-index: 90;
   display: grid;
   gap: 8px;
   padding: 8px 0 10px;
