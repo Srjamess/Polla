@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Polla Mundialista | Ingreso</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="auth-page">
+    <main class="auth-shell">
+      <section class="brand-panel">
+        <div class="brand-mark">PM</div>
+        <h1>Polla Mundialista</h1>
+        <p>Predice resultados, suma puntos y compite con tu grupo durante el Mundial.</p>
+      </section>
+
+      <section class="auth-card glass-card">
+        <div class="auth-toggle" aria-label="Cambiar entre login y registro">
+          <button class="toggle-option active" type="button" data-auth-mode="login">Ingresar</button>
+          <button class="toggle-option" type="button" data-auth-mode="register">Registro</button>
+          <span class="toggle-slider"></span>
+        </div>
+
+        <form id="loginForm" class="auth-form active">
+          <h2>Bienvenido</h2>
+          <label>
+            Usuario
+            <input name="username" type="text" autocomplete="username" required minlength="3" />
+          </label>
+          <label>
+            Contraseña
+            <input name="password" type="password" autocomplete="current-password" required minlength="6" />
+          </label>
+          <button class="primary-button" type="submit">Entrar</button>
+        </form>
+
+        <form id="registerForm" class="auth-form">
+          <h2>Crear cuenta</h2>
+          <label>
+            Usuario
+            <input name="username" type="text" autocomplete="username" required minlength="3" maxlength="32" />
+          </label>
+          <label>
+            Contraseña
+            <input name="password" type="password" autocomplete="new-password" required minlength="6" />
+          </label>
+          <button class="primary-button" type="submit">Registrarme</button>
+        </form>
+      </section>
+    </main>
+
+    <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Polla Mundialista | Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="app-logo" href="dashboard.html">PM</a>
+      <nav class="nav-links">
+        <a class="active" href="dashboard.html">Partidos</a>
+        <a href="leaderboard.html">Tabla</a>
+      </nav>
+      <div class="user-chip">
+        <span id="currentUser"></span>
+        <button id="logoutButton" class="ghost-button" type="button">Salir</button>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">Polla Mundialista</p>
+          <h1>Fixture y predicciones</h1>
+        </div>
+        <a class="secondary-button" href="leaderboard.html">Ver tabla</a>
+      </section>
+
+      <section id="dashboardStats" class="stats-grid"></section>
+
+      <section id="adminPanel" class="admin-panel glass-card hidden">
+        <h2>Administracion</h2>
+        <p class="admin-note">
+          El fixture oficial ya esta cargado. Usa los formularios dentro de cada tarjeta para guardar resultados reales y definir el clasificado en cruces empatados.
+        </p>
+      </section>
+
+      <section class="fixture-tabs" aria-label="Secciones del fixture">
+        <button class="fixture-tab active" type="button" data-view="standings">Posiciones</button>
+        <button class="fixture-tab" type="button" data-view="matches">Partidos</button>
+        <button class="fixture-tab" type="button" data-view="predictions">Predicciones</button>
+        <button class="fixture-tab" type="button" data-view="bracket">Eliminatoria</button>
+      </section>
+
+      <section id="groupsBoard" class="groups-board"></section>
+      <section id="matchesBoard" class="groups-board"></section>
+      <section id="predictionsBoard" class="groups-board"></section>
+      <section id="knockoutBoard" class="knockout-board"></section>
+      <p id="emptyMatches" class="empty-state hidden">No hay partidos creados todavía.</p>
+    </main>
+
+    <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

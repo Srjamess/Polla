@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Polla Mundialista | Tabla</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="app-logo" href="dashboard.html">PM</a>
+      <nav class="nav-links">
+        <a href="dashboard.html">Partidos</a>
+        <a class="active" href="leaderboard.html">Tabla</a>
+      </nav>
+      <div class="user-chip">
+        <span id="currentUser"></span>
+        <button id="logoutButton" class="ghost-button" type="button">Salir</button>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">Ranking general</p>
+          <h1>Tabla de posiciones</h1>
+        </div>
+        <a class="secondary-button" href="dashboard.html">Volver a partidos</a>
+      </section>
+
+      <section class="glass-card leaderboard-card">
+        <div id="leaderboardList" class="leaderboard-list"></div>
+        <p id="emptyLeaderboard" class="empty-state hidden">Aún no hay usuarios en la tabla.</p>
+      </section>
+    </main>
+
+    <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
