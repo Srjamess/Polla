@@ -59,8 +59,18 @@
               </p>
             </div>
 
-            <div class="leaderboard-hero-panel">
-              <p class="leaderboard-panel-kicker">Pulso del torneo</p>
+            <div
+              class="leaderboard-hero-panel is-collapsed"
+              id="leaderboardHeroPanel"
+              role="button"
+              tabindex="0"
+              aria-expanded="false"
+              aria-controls="leaderboardPredictionSummary"
+            >
+              <div class="leaderboard-panel-head">
+                <p class="leaderboard-panel-kicker">Pulso del torneo</p>
+                <span class="leaderboard-panel-toggle">Toca para ver tu desglose</span>
+              </div>
               <div class="leaderboard-overview">
                 <article class="leaderboard-stat-card">
                   <span>Tu puesto</span>
@@ -79,6 +89,11 @@
                   <strong id="leaderboardTotalPlayers">--</strong>
                 </article>
               </div>
+              <div
+                id="leaderboardPredictionSummary"
+                class="leaderboard-prediction-summary hidden"
+                aria-hidden="true"
+              ></div>
             </div>
           </section>
 

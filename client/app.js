@@ -13,6 +13,13 @@ const state = {
   activeView: 'standings',
   matches: [],
   myPredictions: [],
+  predictionSummary: {
+    matchPoints: 0,
+    groupBonus: 0,
+    knockoutBonus: 0,
+    worstTeamBonus: 0,
+    total: 0
+  },
   predictionDrafts: {},
   worstTeamPrediction: {
     predictedWorstTeam: '',
@@ -1617,7 +1624,7 @@ function renderMyPredictionsSummary(predictions) {
       <div class="my-predictions-summary-stats">
         <span><strong>${total}</strong> partidos</span>
         <span><strong>${pending}</strong> pendientes</span>
-        <span><strong>${totalPoints}</strong> pts</span>
+        <span><strong>${state.predictionSummary.total || totalPoints}</strong> pts</span>
       </div>
       <div class="my-predictions-summary-foot">
         <span>${lastPrediction ? `Ultima: ${escapeHtml(lastPrediction.teamA)} vs ${escapeHtml(lastPrediction.teamB)}` : 'Toca aqui para ver el detalle cuando quieras'}</span>
@@ -1625,6 +1632,89 @@ function renderMyPredictionsSummary(predictions) {
       </div>
     </button>
   `;
+}
+
+function renderPredictionPointsBreakdown(options = {}) {
+  const summary = state.predictionSummary || {
+    matchPoints: 0,
+    groupBonus: 0,
+    knockoutBonus: 0,
+    worstTeamBonus: 0,
+    total: 0
+  };
+  const title = options.title || 'Desglose de puntos';
+  const className = options.className ? ` ${options.className}` : '';
+
+  return `
+    <div class="prediction-breakdown-card${className}">
+      <div class="prediction-breakdown-head">
+        <strong>${escapeHtml(title)}</strong>
+        <span>Total ${Number(summary.total || 0)} pts</span>
+      </div>
+      <div class="prediction-breakdown-grid">
+        <div class="prediction-breakdown-item">
+          <span>Partidos</span>
+          <strong>${Number(summary.matchPoints || 0)}</strong>
+        </div>
+        <div class="prediction-breakdown-item">
+          <span>Bonus grupos</span>
+          <strong>${Number(summary.groupBonus || 0)}</strong>
+        </div>
+        <div class="prediction-breakdown-item">
+          <span>Bonus eliminatoria</span>
+          <strong>${Number(summary.knockoutBonus || 0)}</strong>
+        </div>
+        <div class="prediction-breakdown-item">
+          <span>Bonus peor equipo</span>
+          <strong>${Number(summary.worstTeamBonus || 0)}</strong>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLeaderboardPredictionSummary() {
+  const container = document.getElementById('leaderboardPredictionSummary');
+  if (!container) return;
+  container.innerHTML = renderPredictionPointsBreakdown({
+    title: 'Tu desglose',
+    className: 'prediction-breakdown-card-hero'
+  });
+}
+
+function setLeaderboardHeroPanelExpanded(expanded) {
+  const panel = document.getElementById('leaderboardHeroPanel');
+  const summary = document.getElementById('leaderboardPredictionSummary');
+  const toggle = panel?.querySelector('.leaderboard-panel-toggle');
+  if (!panel || !summary) return;
+
+  panel.classList.toggle('is-collapsed', !expanded);
+  panel.classList.toggle('is-expanded', expanded);
+  panel.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  summary.classList.toggle('hidden', !expanded);
+  summary.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+  if (toggle) {
+    toggle.textContent = expanded ? 'Toca para ocultar tu desglose' : 'Toca para ver tu desglose';
+  }
+}
+
+function setupLeaderboardHeroPanel() {
+  const panel = document.getElementById('leaderboardHeroPanel');
+  if (!panel || panel.dataset.bound === 'true') return;
+
+  const togglePanel = () => {
+    const isExpanded = panel.getAttribute('aria-expanded') === 'true';
+    setLeaderboardHeroPanelExpanded(!isExpanded);
+  };
+
+  panel.addEventListener('click', togglePanel);
+  panel.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    togglePanel();
+  });
+
+  panel.dataset.bound = 'true';
 }
 
 function renderMyPredictionsModal(predictions) {
@@ -1640,6 +1730,7 @@ function renderMyPredictionsModal(predictions) {
           <button class="sheet-close" type="button" aria-label="Cerrar" data-close-my-predictions>&times;</button>
         </div>
         <div class="sheet-scroll predictions-sheet-body">
+          ${renderPredictionPointsBreakdown()}
           ${renderMyPredictionsCards(predictions)}
         </div>
       </div>
@@ -3590,13 +3681,21 @@ async function saveWorstTeamPrediction() {
 
 async function loadMatches() {
   try {
-    const [matches, myPredictions, worstTeamPrediction] = await Promise.all([
+    const [matches, myPredictions, worstTeamPrediction, predictionSummary] = await Promise.all([
       apiFetch('/matches'),
       apiFetch('/predictions/me'),
-      apiFetch('/predictions/worst-team')
+      apiFetch('/predictions/worst-team'),
+      apiFetch('/predictions/summary')
     ]);
     state.matches = matches;
     state.myPredictions = myPredictions;
+    state.predictionSummary = {
+      matchPoints: Number(predictionSummary.matchPoints || 0),
+      groupBonus: Number(predictionSummary.groupBonus || 0),
+      knockoutBonus: Number(predictionSummary.knockoutBonus || 0),
+      worstTeamBonus: Number(predictionSummary.worstTeamBonus || 0),
+      total: Number(predictionSummary.total || 0)
+    };
     state.worstTeamPrediction = {
       predictedWorstTeam: worstTeamPrediction.predictedWorstTeam || '',
       teams: worstTeamPrediction.teams || [],
@@ -3620,6 +3719,13 @@ async function loadMatches() {
     }
     state.matches = [];
     state.myPredictions = [];
+    state.predictionSummary = {
+      matchPoints: 0,
+      groupBonus: 0,
+      knockoutBonus: 0,
+      worstTeamBonus: 0,
+      total: 0
+    };
     state.predictionDrafts = {};
     state.worstTeamPrediction = {
       predictedWorstTeam: '',
@@ -3900,7 +4006,10 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
   if (!list || !emptyState) return;
 
   try {
-    const leaderboard = await apiFetch('/leaderboard');
+    const [leaderboard, predictionSummary] = await Promise.all([
+      apiFetch('/leaderboard'),
+      apiFetch('/predictions/summary').catch(() => null)
+    ]);
     const maxPoints   = Math.max(...leaderboard.map((row) => row.points), 1);
     const leader      = leaderboard[0] || null;
     const currentUser = leaderboard.find((row) => row.isCurrentUser) || null;
@@ -3909,6 +4018,17 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
     const currentPoints = document.getElementById('leaderboardCurrentPoints');
     const currentGap  = document.getElementById('leaderboardCurrentGap');
     const totalPlayers = document.getElementById('leaderboardTotalPlayers');
+
+    if (predictionSummary) {
+      state.predictionSummary = {
+        matchPoints: Number(predictionSummary.matchPoints || 0),
+        groupBonus: Number(predictionSummary.groupBonus || 0),
+        knockoutBonus: Number(predictionSummary.knockoutBonus || 0),
+        worstTeamBonus: Number(predictionSummary.worstTeamBonus || 0),
+        total: Number(predictionSummary.total || 0)
+      };
+    }
+    renderLeaderboardPredictionSummary();
 
     if (spotlight) {
       const medalByRank = {
@@ -3985,6 +4105,8 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
     list.innerHTML = '';
     const spotlight = document.getElementById('leaderboardSpotlight');
     if (spotlight) spotlight.innerHTML = '';
+    const summary = document.getElementById('leaderboardPredictionSummary');
+    if (summary) summary.innerHTML = '';
     const statsIds = ['leaderboardCurrentRank', 'leaderboardCurrentPoints', 'leaderboardCurrentGap', 'leaderboardTotalPlayers'];
     statsIds.forEach((id) => {
       const node = document.getElementById(id);
@@ -4012,6 +4134,8 @@ async function initLeaderboardPage() {
 
   setupSharedLayout();
   updateBottomNavState();
+  setupLeaderboardHeroPanel();
+  setLeaderboardHeroPanelExpanded(false);
 
   await loadLeaderboard(list, emptyState);
 

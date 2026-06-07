@@ -2,8 +2,14 @@ const express = require('express');
 const Match = require('../models/Match');
 const Prediction = require('../models/Prediction');
 const { authenticate } = require('../middleware/auth');
-const { recalculateAllScores } = require('../utils/scoring');
+const { recalculateAllScores, calculateMatchPoints } = require('../utils/scoring');
 const { getAppSettings } = require('../utils/appSettings');
+const {
+  buildPredictionMap,
+  buildResolutionContext,
+  calculateGroupBonus,
+  calculateKnockoutBonus
+} = require('../utils/tournament');
 
 const router = express.Router();
 
@@ -76,6 +82,37 @@ async function ensureMatchCanBePredicted(match, settings) {
   return null;
 }
 
+async function buildPredictionSummary(userId, predictedWorstTeam = '') {
+  const [matches, predictions, settings] = await Promise.all([
+    Match.find(),
+    Prediction.find({ user: userId }),
+    getAppSettings()
+  ]);
+
+  let matchPoints = 0;
+
+  predictions.forEach((prediction) => {
+    const match = matches.find((entry) => String(entry._id) === String(prediction.match));
+    if (!match || !match.resultSet) return;
+    matchPoints += calculateMatchPoints(prediction, match);
+  });
+
+  const actualContext = buildResolutionContext(matches);
+  const predictedContext = buildResolutionContext(matches, buildPredictionMap(predictions));
+  const groupBonus = calculateGroupBonus(actualContext, predictedContext);
+  const knockoutBonus = calculateKnockoutBonus(matches, actualContext, predictedContext);
+  const worstTeamBonus =
+    settings.actualWorstTeam && String(predictedWorstTeam || '') === String(settings.actualWorstTeam) ? 5 : 0;
+
+  return {
+    matchPoints,
+    groupBonus,
+    knockoutBonus,
+    worstTeamBonus,
+    total: matchPoints + groupBonus + knockoutBonus + worstTeamBonus
+  };
+}
+
 router.get('/me', async (req, res) => {
   try {
     const predictions = await Prediction.find({ user: req.user._id })
@@ -113,6 +150,15 @@ router.get('/me', async (req, res) => {
     res.json(data);
   } catch (error) {
     res.status(500).json({ message: 'Could not fetch predictions.' });
+  }
+});
+
+router.get('/summary', async (req, res) => {
+  try {
+    const summary = await buildPredictionSummary(req.user._id, req.user.predictedWorstTeam || '');
+    res.json(summary);
+  } catch (error) {
+    res.status(500).json({ message: 'Could not fetch prediction summary.' });
   }
 });
 
