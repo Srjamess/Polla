@@ -2662,17 +2662,20 @@ function renderCurrentUserAvatar() {
 }
 
 function updateLeaderboardRankBadge(rank) {
+  const rankLink = document.getElementById('leaderboardRankLink');
   const rankBadge = document.getElementById('leaderboardRankBadge');
   if (!rankBadge) return;
 
   if (Number.isFinite(rank) && rank > 0) {
     rankBadge.textContent = `#${rank}`;
     rankBadge.classList.remove('hidden');
+    rankLink?.classList.remove('hidden');
     return;
   }
 
   rankBadge.textContent = '#--';
   rankBadge.classList.add('hidden');
+  rankLink?.classList.add('hidden');
 }
 
 async function refreshCurrentUserRankBadge({ silent = true } = {}) {
@@ -4042,7 +4045,13 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         const crown = row.rank === 1 ? '<span class="leaderboard-spotlight-crown">Lider</span>' : '';
         return `
           <article class="leaderboard-spotlight-card ${row.isCurrentUser ? 'current' : ''} ${index === 0 ? 'leaderboard-spotlight-card-top' : ''}">
-            <div class="leaderboard-spotlight-rank">${medalByRank[row.rank] || String(row.rank).padStart(2, '0')}</div>
+            <div class="leaderboard-spotlight-topline">
+              <div class="leaderboard-spotlight-rank">${medalByRank[row.rank] || String(row.rank).padStart(2, '0')}</div>
+              <div class="leaderboard-spotlight-points">
+                <strong>${row.points}</strong>
+                <span>puntos</span>
+              </div>
+            </div>
             <div class="leaderboard-spotlight-head">
               ${getAvatarMarkup(row, 'leaderboard-avatar leaderboard-avatar-large')}
               <div class="leaderboard-spotlight-copy">
@@ -4050,10 +4059,6 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
                 <span>${gap === 0 ? 'Marca el ritmo del torneo' : `${gap} pts del lider`}</span>
               </div>
               ${crown}
-            </div>
-            <div class="leaderboard-spotlight-points">
-              <strong>${row.points}</strong>
-              <span>puntos</span>
             </div>
           </article>
         `;

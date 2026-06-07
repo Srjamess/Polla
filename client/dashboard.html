@@ -37,12 +37,21 @@
         <header class="topbar">
           <div class="topbar-label">POLLA MUNDIALISTA</div>
           <span id="currentUser" class="visually-hidden"></span>
-          <button class="profile-trigger" type="button" data-open-more aria-label="Abrir mas opciones">
-            <span class="topbar-profile-meta">
-              <span id="leaderboardRankBadge" class="user-rank-badge hidden">#--</span>
-              <span id="userAvatar" class="user-avatar">PM</span>
-            </span>
-          </button>
+          <div class="topbar-actions">
+            <a
+              id="leaderboardRankLink"
+              class="leaderboard-rank-link hidden"
+              href="leaderboard.html"
+              aria-label="Abrir tabla general"
+            >
+              <span id="leaderboardRankBadge" class="user-rank-badge">#--</span>
+            </a>
+            <button class="profile-trigger" type="button" data-open-more aria-label="Abrir mas opciones">
+              <span class="topbar-profile-meta">
+                <span id="userAvatar" class="user-avatar">PM</span>
+              </span>
+            </button>
+          </div>
         </header>
 
         <main class="page-shell">
@@ -56,6 +65,7 @@
             <button class="fixture-tab" type="button" data-view="matches">Partidos</button>
             <button class="fixture-tab" type="button" data-view="predictions">Predicciones</button>
             <button class="fixture-tab" type="button" data-view="bracket">Eliminatoria</button>
+            <a class="fixture-tab" href="leaderboard.html">Tabla general</a>
           </section>
 
           <section id="adminPanel" class="admin-panel glass-card hidden">
@@ -73,17 +83,6 @@
         </main>
       </div>
     </div>
-
-    <nav class="bottom-nav" aria-label="Navegacion principal">
-      <a class="bottom-nav-item" href="leaderboard.html" data-bottom-nav="leaderboard">
-        <span class="bottom-nav-icon">🏆</span>
-        <span class="bottom-nav-label">Tabla</span>
-      </a>
-      <button class="bottom-nav-item" type="button" data-open-more data-bottom-nav="more">
-        <span class="bottom-nav-icon">•••</span>
-        <span class="bottom-nav-label">Mas</span>
-      </button>
-    </nav>
 
     <div class="sheet-shell hidden" id="moreSheet" aria-hidden="true">
       <div class="sheet-overlay" data-close-more></div>
