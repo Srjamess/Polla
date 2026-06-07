@@ -18,6 +18,64 @@ function getUniqueTeams(matches) {
   )].sort((a, b) => a.localeCompare(b, 'es'));
 }
 
+function parsePredictionPayload(payload) {
+  const predictedScoreA = Number(payload?.predictedScoreA);
+  const predictedScoreB = Number(payload?.predictedScoreB);
+  const predictedQualifiedTeam = String(payload?.predictedQualifiedTeam || '').trim();
+
+  if (
+    !Number.isInteger(predictedScoreA) ||
+    !Number.isInteger(predictedScoreB) ||
+    predictedScoreA < 0 ||
+    predictedScoreB < 0
+  ) {
+    return null;
+  }
+
+  return {
+    predictedScoreA,
+    predictedScoreB,
+    predictedQualifiedTeam
+  };
+}
+
+function buildPredictionUpdate(match, payload) {
+  const parsed = parsePredictionPayload(payload);
+  if (!parsed) return { error: 'Predictions must be non-negative integers.' };
+
+  let qualifiedSide = '';
+  if (match.stage !== 'group') {
+    if (parsed.predictedScoreA === parsed.predictedScoreB) {
+      if (!['teamA', 'teamB'].includes(parsed.predictedQualifiedTeam)) {
+        return { error: 'A qualified team is required for knockout draws.' };
+      }
+      qualifiedSide = parsed.predictedQualifiedTeam;
+    } else {
+      qualifiedSide = parsed.predictedScoreA > parsed.predictedScoreB ? 'teamA' : 'teamB';
+    }
+  }
+
+  return {
+    update: {
+      predictedScoreA: parsed.predictedScoreA,
+      predictedScoreB: parsed.predictedScoreB,
+      predictedQualifiedTeam: qualifiedSide
+    }
+  };
+}
+
+async function ensureMatchCanBePredicted(match, settings) {
+  if (!match) {
+    return 'Match not found.';
+  }
+
+  if (settings.predictionsLocked || match.matchDate <= new Date() || match.resultSet) {
+    return 'Predictions are locked for this match.';
+  }
+
+  return null;
+}
+
 router.get('/me', async (req, res) => {
   try {
     const predictions = await Prediction.find({ user: req.user._id })
@@ -103,51 +161,87 @@ router.put('/worst-team', async (req, res) => {
   }
 });
 
+router.post('/batch', async (req, res) => {
+  try {
+    const settings = await getAppSettings();
+    const inputPredictions = Array.isArray(req.body?.predictions) ? req.body.predictions : [];
+
+    if (!inputPredictions.length) {
+      return res.status(400).json({ message: 'No predictions provided.' });
+    }
+
+    const matchIds = inputPredictions.map((item) => String(item?.matchId || '').trim()).filter(Boolean);
+    const uniqueMatchIds = [...new Set(matchIds)];
+    if (uniqueMatchIds.length !== inputPredictions.length) {
+      return res.status(400).json({ message: 'Duplicate match predictions are not allowed.' });
+    }
+
+    const matches = await Match.find({ _id: { $in: uniqueMatchIds } });
+    const matchById = new Map(matches.map((match) => [String(match._id), match]));
+
+    for (const matchId of uniqueMatchIds) {
+      const blockedReason = await ensureMatchCanBePredicted(matchById.get(matchId), settings);
+      if (blockedReason) {
+        return res.status(blockedReason === 'Match not found.' ? 404 : 403).json({ message: blockedReason });
+      }
+    }
+
+    const bulkOperations = [];
+    for (const item of inputPredictions) {
+      const matchId = String(item?.matchId || '').trim();
+      const match = matchById.get(matchId);
+      const build = buildPredictionUpdate(match, item);
+
+      if (build.error) {
+        return res.status(400).json({ message: build.error });
+      }
+
+      bulkOperations.push({
+        updateOne: {
+          filter: { user: req.user._id, match: match._id },
+          update: {
+            $set: {
+              ...build.update,
+              points: 0,
+              scored: false
+            },
+            $setOnInsert: {
+              user: req.user._id,
+              match: match._id
+            }
+          },
+          upsert: true
+        }
+      });
+    }
+
+    await Prediction.bulkWrite(bulkOperations, { ordered: true });
+    await recalculateAllScores();
+    res.json({ saved: bulkOperations.length });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not save prediction.' });
+  }
+});
+
 router.post('/:matchId', async (req, res) => {
   try {
     const settings = await getAppSettings();
-    const { predictedScoreA, predictedScoreB, predictedQualifiedTeam } = req.body;
-    const parsedScoreA = Number(predictedScoreA);
-    const parsedScoreB = Number(predictedScoreB);
-
-    if (
-      !Number.isInteger(parsedScoreA) ||
-      !Number.isInteger(parsedScoreB) ||
-      parsedScoreA < 0 ||
-      parsedScoreB < 0
-    ) {
-      return res.status(400).json({ message: 'Predictions must be non-negative integers.' });
-    }
-
     const match = await Match.findById(req.params.matchId);
-
-    if (!match) {
-      return res.status(404).json({ message: 'Match not found.' });
+    const blockedReason = await ensureMatchCanBePredicted(match, settings);
+    if (blockedReason) {
+      return res.status(blockedReason === 'Match not found.' ? 404 : 403).json({ message: blockedReason });
     }
 
-    if (settings.predictionsLocked || match.matchDate <= new Date() || match.resultSet) {
-      return res.status(403).json({ message: 'Predictions are locked for this match.' });
-    }
-
-    let qualifiedSide = '';
-    if (match.stage !== 'group') {
-      if (parsedScoreA === parsedScoreB) {
-        if (!['teamA', 'teamB'].includes(predictedQualifiedTeam)) {
-          return res.status(400).json({ message: 'A qualified team is required for knockout draws.' });
-        }
-        qualifiedSide = predictedQualifiedTeam;
-      } else {
-        qualifiedSide = parsedScoreA > parsedScoreB ? 'teamA' : 'teamB';
-      }
+    const build = buildPredictionUpdate(match, req.body);
+    if (build.error) {
+      return res.status(400).json({ message: build.error });
     }
 
     const prediction = await Prediction.findOneAndUpdate(
       { user: req.user._id, match: match._id },
       {
         $set: {
-          predictedScoreA: parsedScoreA,
-          predictedScoreB: parsedScoreB,
-          predictedQualifiedTeam: qualifiedSide,
+          ...build.update,
           points: 0,
           scored: false
         },

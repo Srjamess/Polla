@@ -1032,11 +1032,17 @@ function isPredictionTie(match, draft = getPredictionDraft(match)) {
   return Number(draft.predictedScoreA) === Number(draft.predictedScoreB);
 }
 
+function getPredictionCardElement(matchId) {
+  const selector = `[data-match-id="${String(matchId)}"] [data-prediction-qualified-wrap]`;
+  const wrapper = document.querySelector(selector);
+  return wrapper?.closest('[data-match-id]') || null;
+}
+
 function syncPredictionQualifiedField(matchId) {
   const match = state.matches.find((item) => String(item._id) === String(matchId));
   if (!match || match.stage === 'group') return;
 
-  const card = document.querySelector(`[data-match-id="${String(matchId)}"]`);
+  const card = getPredictionCardElement(matchId);
   if (!card) return;
 
   const wrapper = card.querySelector('[data-prediction-qualified-wrap]');
@@ -1044,7 +1050,10 @@ function syncPredictionQualifiedField(matchId) {
   const draft = getPredictionDraft(match);
   const isTie = isPredictionTie(match, draft);
 
-  if (wrapper) wrapper.classList.toggle('hidden', !isTie);
+  if (wrapper) {
+    wrapper.classList.toggle('hidden', !isTie);
+    wrapper.hidden = !isTie;
+  }
   if (select) {
     select.disabled = !isTie || match.locked;
     if (!isTie) {
@@ -3402,6 +3411,12 @@ function updatePredictionDraftInput(target, { commit = false } = {}) {
 
   state.invalidPredictionMatchIds = state.invalidPredictionMatchIds.filter((id) => id !== String(matchId));
   syncPredictionQualifiedField(matchId);
+  if (match && match.stage !== 'group') {
+    const wrapper = document.querySelector(`[data-match-id="${String(matchId)}"] [data-prediction-qualified-wrap]`);
+    if (wrapper) {
+      wrapper.hidden = !isPredictionTie(match, updatedDraft);
+    }
+  }
 
   if (state.pendingPredictionStage === stage) {
     state.pendingPredictionStage = null;
@@ -3460,19 +3475,33 @@ async function confirmPredictionStageSave(stage) {
   renderFixture(state.matches, state.myPredictions);
 
   try {
-    for (const match of stageMatches) {
+    const predictions = stageMatches.map((match) => {
       const payload = normalizeDraftPayload(match, getPredictionDraft(match));
       if (!payload) {
         throw new Error('Hay predicciones incompletas en esta fase.');
       }
 
-      await apiFetch(`/predictions/${match._id}`, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      return {
+        matchId: match._id,
+        ...payload
+      };
+    });
+
+    await apiFetch('/predictions/batch', {
+      method: 'POST',
+      body: JSON.stringify({ predictions })
+    });
+
+    if (stageMatches.length > 0) {
+      const firstMatch = stageMatches[0];
+      const stageLabel = getPredictionMatchLabel(firstMatch);
+      if (stageLabel) {
+        toast(`Predicciones guardadas para ${stageLabel}.`);
+      } else {
+        toast('Predicciones guardadas.');
+      }
     }
 
-    toast('Predicciones guardadas.');
     state.invalidPredictionMatchIds = [];
     state.pendingPredictionStage = null;
     state.savingPredictionStage = null;
