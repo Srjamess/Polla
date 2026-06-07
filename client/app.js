@@ -3272,8 +3272,13 @@ function updatePredictionDraftInput(target, { commit = false } = {}) {
     document.body.classList.remove('modal-open');
   }
 
+  refreshPredictionStageSection(stage);
+
   if (commit) {
-    renderFixture(state.matches, state.myPredictions);
+    const matchCard = document.querySelector(`[data-match-id="${String(matchId)}"]`);
+    if (matchCard) {
+      matchCard.classList.remove('prediction-card-incomplete');
+    }
   }
 }
 
@@ -3497,7 +3502,7 @@ async function initDashboardPage() {
   document.addEventListener('change', (event) => {
     const input = event.target.closest('[data-prediction-input]');
     if (!input) return;
-    updatePredictionDraftInput(input, { commit: true });
+    updatePredictionDraftInput(input, { commit: false });
   });
 
   document.addEventListener('click', (event) => {
