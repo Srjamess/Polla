@@ -43,17 +43,56 @@
         </header>
 
         <main class="page-shell">
-          <section class="hero-section hero-section-compact">
-            <a class="leaderboard-back" href="dashboard.html?view=standings">← Volver</a>
-            <p class="eyebrow">Ranking general</p>
-            <h1 class="hero-title">
-              <span class="hero-line hero-line-strong">Tabla de</span>
-              <span class="hero-line hero-line-soft">posiciones</span>
-            </h1>
+          <section class="hero-section hero-section-compact leaderboard-hero">
+            <div class="leaderboard-hero-copy">
+              <a class="leaderboard-back" href="dashboard.html?view=standings">Volver</a>
+              <p class="eyebrow">Ranking general</p>
+              <h1 class="hero-title">
+                <span class="hero-line hero-line-strong">Tabla de</span>
+                <span class="hero-line hero-line-soft">posiciones</span>
+              </h1>
+              <p class="leaderboard-hero-text">
+                Sigue el podio, compara tu diferencia con el lider y revisa el ritmo de la competencia en tiempo real.
+              </p>
+            </div>
+
+            <div class="leaderboard-hero-panel">
+              <p class="leaderboard-panel-kicker">Pulso del torneo</p>
+              <div class="leaderboard-overview">
+                <article class="leaderboard-stat-card">
+                  <span>Tu puesto</span>
+                  <strong id="leaderboardCurrentRank">--</strong>
+                </article>
+                <article class="leaderboard-stat-card">
+                  <span>Tus puntos</span>
+                  <strong id="leaderboardCurrentPoints">--</strong>
+                </article>
+                <article class="leaderboard-stat-card">
+                  <span>Diferencia</span>
+                  <strong id="leaderboardCurrentGap">--</strong>
+                </article>
+                <article class="leaderboard-stat-card">
+                  <span>Jugadores</span>
+                  <strong id="leaderboardTotalPlayers">--</strong>
+                </article>
+              </div>
+            </div>
           </section>
 
-          <section class="leaderboard-card">
-            <div id="leaderboardList" class="leaderboard-list"></div>
+          <section class="leaderboard-card leaderboard-shell">
+            <div id="leaderboardSpotlight" class="leaderboard-spotlight"></div>
+
+            <div class="leaderboard-ranking-shell">
+              <div class="leaderboard-ranking-head">
+                <div>
+                  <p class="leaderboard-panel-kicker">Clasificacion completa</p>
+                  <h2>Todos los participantes</h2>
+                </div>
+                <p class="leaderboard-ranking-note">Actualizacion automatica cada 15 segundos.</p>
+              </div>
+
+              <div id="leaderboardList" class="leaderboard-ranking-list"></div>
+            </div>
             <p id="emptyLeaderboard" class="empty-state hidden">Aun no hay usuarios en la tabla.</p>
           </section>
         </main>
@@ -62,11 +101,11 @@
 
     <nav class="bottom-nav" aria-label="Navegacion principal">
       <a class="bottom-nav-item is-active" href="leaderboard.html" data-bottom-nav="leaderboard">
-        <span class="bottom-nav-icon">🏆</span>
+        <span class="bottom-nav-icon">&#127942;</span>
         <span class="bottom-nav-label">Tabla</span>
       </a>
       <button class="bottom-nav-item" type="button" data-open-more data-bottom-nav="more">
-        <span class="bottom-nav-icon">•••</span>
+        <span class="bottom-nav-icon">&#8226;&#8226;&#8226;</span>
         <span class="bottom-nav-label">Mas</span>
       </button>
     </nav>
@@ -84,23 +123,23 @@
             <span class="sheet-item-label">Reset pruebas</span>
           </button>
           <button class="sheet-item hidden" type="button" data-admin-lock-predictions>
-            <span class="sheet-item-icon">🔒</span>
+            <span class="sheet-item-icon">&#128274;</span>
             <span class="sheet-item-label">Bloquear predicciones</span>
           </button>
           <button class="sheet-item hidden" type="button" data-admin-unlock-predictions>
-            <span class="sheet-item-icon">🔓</span>
+            <span class="sheet-item-icon">&#128275;</span>
             <span class="sheet-item-label">Reabrir predicciones</span>
           </button>
           <button class="sheet-item" type="button" data-open-profile>
-            <span class="sheet-item-icon">◉</span>
+            <span class="sheet-item-icon">&#9673;</span>
             <span class="sheet-item-label">Perfil</span>
           </button>
           <a class="sheet-item" href="dashboard.html?view=matches">
-            <span class="sheet-item-icon">📄</span>
+            <span class="sheet-item-icon">&#128196;</span>
             <span class="sheet-item-label">Partidos</span>
           </a>
           <a class="sheet-item" href="dashboard.html?view=predictions">
-            <span class="sheet-item-icon">🎯</span>
+            <span class="sheet-item-icon">&#127919;</span>
             <span class="sheet-item-label">Predicciones</span>
           </a>
           <button class="sheet-item" type="button" data-open-scoring>
@@ -112,7 +151,7 @@
             <span class="sheet-item-label">Como predecir</span>
           </button>
           <button class="sheet-item" type="button" data-logout>
-            <span class="sheet-item-icon">↩</span>
+            <span class="sheet-item-icon">&#8617;</span>
             <span class="sheet-item-label">Salir</span>
           </button>
         </div>

@@ -3779,16 +3779,78 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
   try {
     const leaderboard = await apiFetch('/leaderboard');
     const maxPoints   = Math.max(...leaderboard.map((row) => row.points), 1);
+    const leader      = leaderboard[0] || null;
+    const currentUser = leaderboard.find((row) => row.isCurrentUser) || null;
+    const spotlight   = document.getElementById('leaderboardSpotlight');
+    const currentRank = document.getElementById('leaderboardCurrentRank');
+    const currentPoints = document.getElementById('leaderboardCurrentPoints');
+    const currentGap  = document.getElementById('leaderboardCurrentGap');
+    const totalPlayers = document.getElementById('leaderboardTotalPlayers');
+
+    if (spotlight) {
+      const medalByRank = {
+        1: '01',
+        2: '02',
+        3: '03'
+      };
+
+      spotlight.innerHTML = leaderboard.slice(0, 3).map((row, index) => {
+        const gap = leader ? Math.max(leader.points - row.points, 0) : 0;
+        const crown = row.rank === 1 ? '<span class="leaderboard-spotlight-crown">Lider</span>' : '';
+        return `
+          <article class="leaderboard-spotlight-card ${row.isCurrentUser ? 'current' : ''} ${index === 0 ? 'leaderboard-spotlight-card-top' : ''}">
+            <div class="leaderboard-spotlight-rank">${medalByRank[row.rank] || String(row.rank).padStart(2, '0')}</div>
+            <div class="leaderboard-spotlight-head">
+              ${getAvatarMarkup(row, 'leaderboard-avatar leaderboard-avatar-large')}
+              <div class="leaderboard-spotlight-copy">
+                <p>${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}</p>
+                <span>${gap === 0 ? 'Marca el ritmo del torneo' : `${gap} pts del lider`}</span>
+              </div>
+              ${crown}
+            </div>
+            <div class="leaderboard-spotlight-points">
+              <strong>${row.points}</strong>
+              <span>puntos</span>
+            </div>
+          </article>
+        `;
+      }).join('');
+      spotlight.classList.toggle('hidden', leaderboard.length === 0);
+    }
+
+    if (currentRank) {
+      currentRank.textContent = currentUser ? `#${currentUser.rank}` : '--';
+    }
+
+    if (currentPoints) {
+      currentPoints.textContent = currentUser ? `${currentUser.points} pts` : '--';
+    }
+
+    if (currentGap) {
+      currentGap.textContent = leader && currentUser ? `${Math.max(leader.points - currentUser.points, 0)} pts` : '--';
+    }
+
+    if (totalPlayers) {
+      totalPlayers.textContent = String(leaderboard.length);
+    }
+
     list.innerHTML = leaderboard.map((row, index) => {
       const percent = Math.max((row.points / maxPoints) * 100, 6);
       return `
         <div class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}" style="animation-delay:${index * 45}ms">
-          <div class="rank-number">${row.rank}</div>
+          <div class="rank-number">${String(row.rank).padStart(2, '0')}</div>
           <div class="leaderboard-user">
             <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}</div>
+            <div class="leaderboard-meta">
+              <span>${row.rank <= 3 ? 'Zona de podio' : `${Math.max((leader?.points || row.points) - row.points, 0)} pts del lider`}</span>
+              <span>#${row.rank}</span>
+            </div>
             <div class="points-track"><span style="width:${percent}%"></span></div>
           </div>
-          <div class="leaderboard-points">${row.points} pts</div>
+          <div class="leaderboard-points">
+            <strong>${row.points}</strong>
+            <span>pts</span>
+          </div>
         </div>
       `;
     }).join('');
@@ -3796,6 +3858,13 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
     emptyState.classList.toggle('hidden', leaderboard.length > 0);
   } catch (error) {
     list.innerHTML = '';
+    const spotlight = document.getElementById('leaderboardSpotlight');
+    if (spotlight) spotlight.innerHTML = '';
+    const statsIds = ['leaderboardCurrentRank', 'leaderboardCurrentPoints', 'leaderboardCurrentGap', 'leaderboardTotalPlayers'];
+    statsIds.forEach((id) => {
+      const node = document.getElementById(id);
+      if (node) node.textContent = '--';
+    });
     emptyState.classList.remove('hidden');
     if (!silent) {
       toast(error.message || 'No se pudo cargar la tabla.', 'error');

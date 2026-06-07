@@ -22,21 +22,40 @@ function randInt(rng, min, max) {
 
 async function upsertUser(username, password) {
   const hashedPassword = await bcrypt.hash(password, 12);
-  const existing = await User.findOne({ username: new RegExp(`^${username}$`, 'i') });
+  const email = username.includes('@') ? username.toLowerCase() : '';
+  const existing = await User.findOne({
+    $or: [
+      ...(email ? [{ email }] : []),
+      { username: new RegExp(`^${username}$`, 'i') }
+    ]
+  }).select('_id').lean();
 
-  if (existing) {
-    existing.username = username;
-    existing.password = hashedPassword;
-    existing.totalPoints = 0;
-    await existing.save();
-    return existing;
+  if (existing?._id) {
+    await User.updateOne(
+      { _id: existing._id },
+      {
+        $set: {
+          username,
+          password: hashedPassword,
+          totalPoints: 0
+        }
+      }
+    );
+
+    return User.findById(existing._id);
   }
 
-  return User.create({
+  const createPayload = {
     username,
     password: hashedPassword,
     totalPoints: 0
-  });
+  };
+
+  if (email) {
+    createPayload.email = email;
+  }
+
+  return User.create(createPayload);
 }
 
 async function main() {
@@ -47,15 +66,14 @@ async function main() {
 
   await mongoose.connect(process.env.MONGO_URI);
 
-  const username = 'solo1@gamil.com';
-  const password = 'james1';
-  const rng = makeRng(20260607);
-
-  await Prediction.deleteMany({});
-  await User.updateMany({}, { $set: { totalPoints: 0 } });
+  const username = 'prueba1';
+  const password = 'prueba 1';
+  const rng = makeRng(20260609);
 
   const user = await upsertUser(username, password);
   const matches = await Match.find().sort({ matchDate: 1, code: 1 });
+
+  await Prediction.deleteMany({ user: user._id });
 
   const predictions = matches.map((match) => {
     const scoreA = randInt(rng, 0, 4);
@@ -82,7 +100,7 @@ async function main() {
   await Prediction.insertMany(predictions);
   await recalculateAllScores();
 
-  const refreshedUser = await User.findById(user._id).select('username totalPoints');
+  const refreshedUser = await User.findById(user._id).select('username totalPoints email');
   const predictionCount = await Prediction.countDocuments({ user: user._id });
 
   await mongoose.disconnect();

@@ -47,15 +47,14 @@ async function main() {
 
   await mongoose.connect(process.env.MONGO_URI);
 
-  const username = 'solo1@gamil.com';
-  const password = 'james1';
-  const rng = makeRng(20260607);
-
-  await Prediction.deleteMany({});
-  await User.updateMany({}, { $set: { totalPoints: 0 } });
+  const username = 'prueba@gmail.com';
+  const password = 'prueba 1';
+  const rng = makeRng(20260608);
 
   const user = await upsertUser(username, password);
   const matches = await Match.find().sort({ matchDate: 1, code: 1 });
+
+  await Prediction.deleteMany({ user: user._id });
 
   const predictions = matches.map((match) => {
     const scoreA = randInt(rng, 0, 4);
