@@ -931,8 +931,8 @@ function renderAdminResultForm(match) {
         <span>${match.resultSet ? 'Actualizable' : 'Pendiente'}</span>
       </div>
       <form class="result-form" data-result-form>
-        <input name="scoreA" type="number" min="0" step="1" placeholder="Gol A" value="${match.resultSet && Number.isInteger(match.scoreA) ? match.scoreA : ''}" required />
-        <input name="scoreB" type="number" min="0" step="1" placeholder="Gol B" value="${match.resultSet && Number.isInteger(match.scoreB) ? match.scoreB : ''}" required />
+        <input name="scoreA" type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="1" placeholder="Gol A" value="${match.resultSet && Number.isInteger(match.scoreA) ? match.scoreA : ''}" required />
+        <input name="scoreB" type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="1" placeholder="Gol B" value="${match.resultSet && Number.isInteger(match.scoreB) ? match.scoreB : ''}" required />
         ${match.stage === 'group' ? '' : `
           <select name="qualifiedTeam">
             <option value="">Clasificado si hay empate</option>
@@ -1288,8 +1288,8 @@ function renderMatch(match, groupTables, groupStatus, matchesByCode, compact, hi
       ${minimalPredictionCard ? '' : `<p class="venue">${escapeHtml(match.venue || '')}</p>`}
       ${compact ? '' : `
       <div class="prediction-form ${minimalPredictionCard ? 'prediction-form-minimal' : ''} ${minimalPredictionCard && match.stage !== 'group' ? 'prediction-form-with-qualifier' : ''}">
-          <input name="predictedScoreA" data-prediction-input data-stage="${escapeHtml(match.stage)}" data-match-id="${escapeHtml(match._id)}" data-field="predictedScoreA" type="number" min="0" step="1" placeholder="A" value="${prediction?.predictedScoreA ?? ''}" ${match.locked ? 'disabled' : ''} />
-          <input name="predictedScoreB" data-prediction-input data-stage="${escapeHtml(match.stage)}" data-match-id="${escapeHtml(match._id)}" data-field="predictedScoreB" type="number" min="0" step="1" placeholder="B" value="${prediction?.predictedScoreB ?? ''}" ${match.locked ? 'disabled' : ''} />
+          <input name="predictedScoreA" data-prediction-input data-stage="${escapeHtml(match.stage)}" data-match-id="${escapeHtml(match._id)}" data-field="predictedScoreA" type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="1" placeholder="A" value="${prediction?.predictedScoreA ?? ''}" ${match.locked ? 'disabled' : ''} />
+          <input name="predictedScoreB" data-prediction-input data-stage="${escapeHtml(match.stage)}" data-match-id="${escapeHtml(match._id)}" data-field="predictedScoreB" type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="1" placeholder="B" value="${prediction?.predictedScoreB ?? ''}" ${match.locked ? 'disabled' : ''} />
           ${match.stage === 'group' ? '' : `
             <div class="prediction-qualified-wrap ${isPredictionTie(match, prediction) ? '' : 'hidden'}" data-prediction-qualified-wrap>
               <select name="predictedQualifiedTeam" data-prediction-input data-prediction-qualified-select data-stage="${escapeHtml(match.stage)}" data-match-id="${escapeHtml(match._id)}" data-field="predictedQualifiedTeam" ${match.locked ? 'disabled' : ''}>
@@ -2518,13 +2518,16 @@ function closeMoreSheet() {
 
 function updateBottomNavState() {
   document.querySelectorAll('[data-bottom-nav]').forEach((item) => item.classList.remove('is-active'));
+  document.querySelectorAll('[data-nav-page]').forEach((item) => item.classList.remove('is-active'));
 
-  const navKey = document.getElementById('leaderboardList')
-    ? 'leaderboard'
-    : 'more';
+  const isLeaderboardPage = Boolean(document.getElementById('leaderboardList'));
+  const navKey = isLeaderboardPage ? 'leaderboard' : 'more';
 
   const activeItem = document.querySelector(`[data-bottom-nav="${navKey}"]`);
   if (activeItem) activeItem.classList.add('is-active');
+
+  const activePageItems = document.querySelectorAll(`[data-nav-page="${isLeaderboardPage ? 'leaderboard' : 'dashboard'}"]`);
+  activePageItems.forEach((item) => item.classList.add('is-active'));
 }
 
 function initSharedShell() {
@@ -2679,33 +2682,96 @@ function renderScoringModal() {
           <button class="modal-close" type="button" aria-label="Cerrar" data-close-scoring>&times;</button>
         </div>
         <div class="modal-body scoring-modal-body">
-          <section class="scoring-block">
-            <h4>Puntos por partido</h4>
-            <ul class="scoring-list">
-              <li><strong>3 puntos</strong> por acertar el marcador exacto.</li>
-              <li><strong>1 punto</strong> por acertar ganador o empate sin clavar el marcador.</li>
-              <li><strong>0 puntos</strong> si el resultado no coincide.</li>
-            </ul>
-          </section>
-          <section class="scoring-block">
-            <h4>Bonos del torneo</h4>
-            <ul class="scoring-list">
-              <li><strong>Grupos:</strong> 2 puntos por cada clasificado correcto a octavos y 1 punto extra si tambien aciertas su posicion exacta.</li>
-              <li><strong>Cruces:</strong> se suman bonos por ubicar equipos correctos en rondas avanzadas.</li>
-              <li><strong>Campeon:</strong> acertar el ganador final suma un bono extra.</li>
-            </ul>
-            <div class="scoring-chip-row">
-              <span class="scoring-chip">Octavos: 2</span>
-              <span class="scoring-chip">Cuartos: 3</span>
-              <span class="scoring-chip">Semifinal: 5</span>
-              <span class="scoring-chip">Final: 8</span>
-              <span class="scoring-chip">Tercer puesto: 2</span>
-              <span class="scoring-chip">Campeon: 12</span>
+          <section class="scoring-hero">
+            <div class="scoring-hero-copy">
+              <span class="scoring-hero-badge">Resumen rapido</span>
+              <p>Tu puntaje final mezcla aciertos directos de partidos y bonos por leer bien el desarrollo del torneo.</p>
+            </div>
+            <div class="scoring-hero-grid">
+              <article class="scoring-stat">
+                <strong>3 pts</strong>
+                <span>Marcador exacto</span>
+              </article>
+              <article class="scoring-stat">
+                <strong>1 pt</strong>
+                <span>Ganador o empate</span>
+              </article>
+              <article class="scoring-stat">
+                <strong>+12</strong>
+                <span>Campeon correcto</span>
+              </article>
             </div>
           </section>
+
+          <section class="scoring-block scoring-block-accent">
+            <div class="scoring-block-head">
+              <h4>Puntos por partido</h4>
+              <span class="scoring-block-tag">Se suman partido a partido</span>
+            </div>
+            <div class="scoring-rule-list">
+              <article class="scoring-rule-card">
+                <strong>3 puntos</strong>
+                <p>Acertaste el marcador exacto del partido.</p>
+              </article>
+              <article class="scoring-rule-card">
+                <strong>1 punto</strong>
+                <p>Acertaste ganador o empate, aunque el marcador no fue exacto.</p>
+              </article>
+              <article class="scoring-rule-card">
+                <strong>0 puntos</strong>
+                <p>El signo del partido no coincide con el resultado real.</p>
+              </article>
+            </div>
+          </section>
+
           <section class="scoring-block">
-            <h4>Cuando se actualiza</h4>
-            <p>Tu puntaje se recalcula cuando el admin carga resultados oficiales. La tabla general acumula partidos mas bonos.</p>
+            <div class="scoring-block-head">
+              <h4>Bonos del torneo</h4>
+              <span class="scoring-block-tag">Premian tu lectura del bracket</span>
+            </div>
+            <div class="scoring-explainer">
+              <article class="scoring-explainer-card">
+                <strong>Fase de grupos</strong>
+                <p>Por cada grupo completo obtienes <strong>2 puntos</strong> por cada clasificado correcto y <strong>1 punto extra</strong> si tambien clavas su posicion exacta.</p>
+              </article>
+              <article class="scoring-explainer-card">
+                <strong>Fases eliminatorias</strong>
+                <p>Los bonos se calculan por cada equipo correcto ubicado en la llave real de esa ronda.</p>
+              </article>
+            </div>
+            <div class="scoring-chip-row">
+              <span class="scoring-chip">Octavos: +2 por equipo</span>
+              <span class="scoring-chip">Cuartos: +3 por equipo</span>
+              <span class="scoring-chip">Semifinal: +5 por equipo</span>
+              <span class="scoring-chip">Final: +8 por equipo</span>
+              <span class="scoring-chip">Tercer puesto: +2 por equipo</span>
+              <span class="scoring-chip scoring-chip-gold">Campeon: +12 extra</span>
+            </div>
+          </section>
+
+          <section class="scoring-block">
+            <div class="scoring-block-head">
+              <h4>Como se refleja en la tabla</h4>
+              <span class="scoring-block-tag">Actualizacion oficial</span>
+            </div>
+            <div class="scoring-timeline">
+              <div class="scoring-timeline-step">
+                <strong>1. Se carga el resultado</strong>
+                <p>Cuando el admin registra un resultado oficial, ese partido queda listo para puntuar.</p>
+              </div>
+              <div class="scoring-timeline-step">
+                <strong>2. Se recalcula tu total</strong>
+                <p>Se suman tus puntos directos del partido y los bonos de grupos o eliminatoria que ya correspondan.</p>
+              </div>
+              <div class="scoring-timeline-step">
+                <strong>3. Se mueve la tabla general</strong>
+                <p>El leaderboard muestra el acumulado actualizado de todos los usuarios.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="scoring-note">
+            <strong>Importante:</strong> los bonos de grupo solo cuentan cuando el grupo ya esta completo, y los bonos del bracket dependen de que los equipos queden ubicados en la llave real.
           </section>
         </div>
       </div>
@@ -3139,6 +3205,9 @@ async function initDashboardPage() {
 
   const syncActiveViewControls = () => {
     tabs.forEach((item) => item.classList.toggle('active', item.dataset.view === state.activeView));
+    document.querySelectorAll('[data-nav-view]').forEach((item) => {
+      item.classList.toggle('is-active', item.dataset.navView === state.activeView);
+    });
     updateBottomNavState();
   };
 

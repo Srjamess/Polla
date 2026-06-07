@@ -6,41 +6,68 @@
     <title>Polla Mundialista | Dashboard</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
-    <header class="topbar">
-      <div class="topbar-label">POLLA MUNDIALISTA</div>
-      <span id="currentUser" class="visually-hidden"></span>
-      <button class="profile-trigger" type="button" data-open-more aria-label="Abrir mas opciones">
-        <span id="userAvatar" class="user-avatar">PM</span>
-      </button>
-    </header>
+  <body class="app-page dashboard-page">
+    <div class="app-layout">
+      <aside class="app-sidebar" aria-label="Navegacion de escritorio">
+        <div class="sidebar-block sidebar-brand-block">
+          <p class="sidebar-kicker">Temporada 2026</p>
+          <a class="sidebar-brand" href="dashboard.html?view=standings">Polla Mundialista</a>
+          <p class="sidebar-copy">Sigue grupos, partidos, predicciones y cruces sin comprimir la vista en escritorio.</p>
+        </div>
 
-    <main class="page-shell">
-      <section class="hero-section">
-        <p class="eyebrow">Temporada 2026</p>
-        <div id="dashboardNextMatch" class="hero-next-match" aria-label="Proximo partido"></div>
-      </section>
+        <nav class="sidebar-block sidebar-nav">
+          <button class="sidebar-link is-active" type="button" data-nav-view="standings">Posiciones</button>
+          <button class="sidebar-link" type="button" data-nav-view="matches">Partidos</button>
+          <button class="sidebar-link" type="button" data-nav-view="predictions">Predicciones</button>
+          <button class="sidebar-link" type="button" data-nav-view="bracket">Eliminatoria</button>
+          <a class="sidebar-link" href="leaderboard.html" data-nav-page="leaderboard">Tabla general</a>
+        </nav>
 
-      <section class="fixture-tabs" aria-label="Secciones del fixture">
-        <button class="fixture-tab active" type="button" data-view="standings">Posiciones</button>
-        <button class="fixture-tab" type="button" data-view="matches">Partidos</button>
-        <button class="fixture-tab" type="button" data-view="predictions">Predicciones</button>
-        <button class="fixture-tab" type="button" data-view="bracket">Eliminatoria</button>
-      </section>
+        <div class="sidebar-block sidebar-actions">
+          <button class="sidebar-link sidebar-link-secondary" type="button" data-open-profile>Perfil</button>
+          <button class="sidebar-link sidebar-link-secondary" type="button" data-open-scoring>Calificacion</button>
+          <button class="sidebar-link sidebar-link-secondary" type="button" data-open-predictions-help>Como predecir</button>
+          <button class="sidebar-link sidebar-link-secondary" type="button" data-logout>Salir</button>
+        </div>
+      </aside>
 
-      <section id="adminPanel" class="admin-panel glass-card hidden">
-        <h2>Administracion</h2>
-        <p class="admin-note">
-          El fixture oficial ya esta cargado. Usa los formularios dentro de cada tarjeta para guardar resultados reales y definir el clasificado en cruces empatados.
-        </p>
-      </section>
+      <div class="app-main">
+        <header class="topbar">
+          <div class="topbar-label">POLLA MUNDIALISTA</div>
+          <span id="currentUser" class="visually-hidden"></span>
+          <button class="profile-trigger" type="button" data-open-more aria-label="Abrir mas opciones">
+            <span id="userAvatar" class="user-avatar">PM</span>
+          </button>
+        </header>
 
-      <section id="groupsBoard" class="groups-board"></section>
-      <section id="matchesBoard" class="groups-board"></section>
-      <section id="predictionsBoard" class="groups-board"></section>
-      <section id="knockoutBoard" class="knockout-board"></section>
-      <p id="emptyMatches" class="empty-state hidden">No hay partidos creados todavia.</p>
-    </main>
+        <main class="page-shell">
+          <section class="hero-section">
+            <p class="eyebrow">Temporada 2026</p>
+            <div id="dashboardNextMatch" class="hero-next-match" aria-label="Proximo partido"></div>
+          </section>
+
+          <section class="fixture-tabs" aria-label="Secciones del fixture">
+            <button class="fixture-tab active" type="button" data-view="standings">Posiciones</button>
+            <button class="fixture-tab" type="button" data-view="matches">Partidos</button>
+            <button class="fixture-tab" type="button" data-view="predictions">Predicciones</button>
+            <button class="fixture-tab" type="button" data-view="bracket">Eliminatoria</button>
+          </section>
+
+          <section id="adminPanel" class="admin-panel glass-card hidden">
+            <h2>Administracion</h2>
+            <p class="admin-note">
+              El fixture oficial ya esta cargado. Usa los formularios dentro de cada tarjeta para guardar resultados reales y definir el clasificado en cruces empatados.
+            </p>
+          </section>
+
+          <section id="groupsBoard" class="groups-board"></section>
+          <section id="matchesBoard" class="groups-board"></section>
+          <section id="predictionsBoard" class="groups-board"></section>
+          <section id="knockoutBoard" class="knockout-board"></section>
+          <p id="emptyMatches" class="empty-state hidden">No hay partidos creados todavia.</p>
+        </main>
+      </div>
+    </div>
 
     <nav class="bottom-nav" aria-label="Navegacion principal">
       <a class="bottom-nav-item" href="leaderboard.html" data-bottom-nav="leaderboard">
