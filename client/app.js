@@ -14,11 +14,20 @@ const state = {
   matches: [],
   myPredictions: [],
   predictionDrafts: {},
+  worstTeamPrediction: {
+    predictedWorstTeam: '',
+    teams: [],
+    locked: false,
+    draft: '',
+    isOpen: false
+  },
+  savingWorstTeamPrediction: false,
   pendingPredictionStage: null,
   savingPredictionStage: null,
   invalidPredictionMatchIds: [],
   profileDraftImage: '',
   activeAvatarSection: 'Futbol',
+  adminSettings: null,
   bracketResizeBound: false,
   bracketTab: 'real'
 };
@@ -487,6 +496,8 @@ async function apiFetch(path, options = {}) {
 function setSession(payload) {
   state.token = payload.token;
   state.user = payload.user;
+  state.worstTeamPrediction.predictedWorstTeam = payload.user?.predictedWorstTeam || '';
+  state.worstTeamPrediction.draft = payload.user?.predictedWorstTeam || '';
   state.profileDraftImage = payload.user?.avatarImage || '';
   localStorage.setItem('pm_token', payload.token);
   localStorage.setItem('pm_user', JSON.stringify(payload.user));
@@ -993,6 +1004,19 @@ function prettySourceLabel(source) {
   return text;
 }
 
+function getTournamentTeams(matches = state.matches) {
+  return [...new Set(
+    (matches || [])
+      .flatMap((match) => [match.teamA, match.teamB])
+      .map((team) => String(team || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, 'es'));
+}
+
+function getWorstTeamDraftValue() {
+  return state.worstTeamPrediction.draft || state.worstTeamPrediction.predictedWorstTeam || '';
+}
+
 function getPredictionDraft(match) {
   return state.predictionDrafts[match._id] || {
     predictedScoreA: '',
@@ -1138,22 +1162,6 @@ function getIncompletePredictionReason(match, draft = getPredictionDraft(match))
   }
 
   return '';
-}
-
-function renderPredictionProgress(stageMatches) {
-  const summary = getStagePredictionState(stageMatches);
-
-  return `
-    <div class="prediction-progress" data-prediction-progress>
-      <div class="prediction-progress-copy">
-        <strong>${summary.completed}/${summary.total}</strong>
-        <span>predicciones completas</span>
-      </div>
-      <div class="prediction-progress-track" aria-hidden="true">
-        <span style="width:${summary.progress}%"></span>
-      </div>
-    </div>
-  `;
 }
 
 function renderPredictionReviewRows(stageMatches) {
@@ -1437,7 +1445,6 @@ function renderPredictionsSections(matches, groupTables, groupStatus, matchesByC
             <h3>${escapeHtml(stageLabel(stage))}</h3>
             <span>${stageMatches.length} partido${stageMatches.length === 1 ? '' : 's'}</span>
           </header>
-          ${renderPredictionProgress(stageMatches)}
           <div class="prediction-grid">
             ${stageMatches.map((match) => renderMatch(match, groupTables, groupStatus, matchesByCode, false, false, true)).join('')}
           </div>
@@ -1452,9 +1459,9 @@ function renderPredictionsSections(matches, groupTables, groupStatus, matchesByC
   `;
 }
 
-function renderPredictionStageNav(matches) {
+function renderPredictionStageNav(items) {
   const stageOrder = ['group', 'roundOf32', 'roundOf16', 'quarterfinal', 'semifinal', 'thirdPlace', 'final'];
-  const availableStages = stageOrder.filter((stage) => matches.some((match) => (match.stage || 'other') === stage));
+  const availableStages = stageOrder.filter((stage) => items.some((item) => (item.stage || 'other') === stage));
   const activeStage = state.activePredictionStage || availableStages[0] || '';
 
   return `
@@ -2292,6 +2299,7 @@ function renderFixture(matches, myPredictions = []) {
   );
 
   const predictionMatches = matches.filter((m) => !m.locked);
+  const predictionNavItems = predictionMatches.length ? predictionMatches : myPredictions;
   const knockoutMatches = matches.filter((m) => m.stage !== 'group');
   const roundOf32       = knockoutMatches.filter((m) => m.stage === 'roundOf32');
   const roundOf16       = knockoutMatches.filter((m) => m.stage === 'roundOf16');
@@ -2319,12 +2327,13 @@ function renderFixture(matches, myPredictions = []) {
       <section class="my-predictions-stage">
         ${renderMyPredictionsSummary(myPredictions)}
       </section>
-      ${renderPredictionStageNav(predictionMatches)}
+      ${renderPredictionStageNav(predictionNavItems)}
       <div class="prediction-sections">
         ${predictionMatches.length
           ? renderPredictionsSections(predictionMatches, groupTables, groupStatus, matchesByCode)
-          : '<p class="empty-state">No hay predicciones abiertas.</p>'}
+          : renderClosedPredictionsState(myPredictions)}
       </div>
+      ${renderWorstTeamPredictionCard()}
       ${renderMyPredictionsModal(myPredictions)}
       ${renderPredictionReviewSheet(predictionMatches)}
     </section>
@@ -2451,6 +2460,20 @@ function updateAdminResetVisibility() {
   document.querySelectorAll('[data-admin-reset-pruebas]').forEach((button) => {
     button.classList.toggle('hidden', !state.user?.isAdmin);
   });
+  updateAdminPredictionsLockVisibility();
+}
+
+function updateAdminPredictionsLockVisibility() {
+  const isAdmin = Boolean(state.user?.isAdmin);
+  const predictionsLocked = Boolean(state.adminSettings?.predictionsLocked);
+
+  document.querySelectorAll('[data-admin-lock-predictions]').forEach((button) => {
+    button.classList.toggle('hidden', !isAdmin || predictionsLocked);
+  });
+
+  document.querySelectorAll('[data-admin-unlock-predictions]').forEach((button) => {
+    button.classList.toggle('hidden', !isAdmin || !predictionsLocked);
+  });
 }
 
 function getUserInitials(username) {
@@ -2500,7 +2523,14 @@ function decorateLeaderboardAvatars(list, leaderboard) {
   });
 }
 
-function openMoreSheet() {
+async function openMoreSheet() {
+  if (state.user?.isAdmin) {
+    try {
+      await fetchAdminSettings({ silent: true });
+      updateAdminPredictionsLockVisibility();
+    } catch {}
+  }
+
   const sheet = document.getElementById('moreSheet');
   if (!sheet) return;
   sheet.classList.remove('hidden');
@@ -2544,7 +2574,9 @@ function initSharedShell() {
 
     if (event.target.closest('[data-open-profile]')) {
       closeMoreSheet();
-      openProfileModal();
+      openProfileModal().catch((error) => {
+        toast(error.message || 'No se pudo abrir el perfil.', 'error');
+      });
       return;
     }
 
@@ -2576,7 +2608,9 @@ function initSharedShell() {
     }
 
     if (event.target.closest('[data-open-more]')) {
-      openMoreSheet();
+      openMoreSheet().catch((error) => {
+        toast(error.message || 'No se pudo abrir mas opciones.', 'error');
+      });
       return;
     }
 
@@ -2610,6 +2644,26 @@ function initSharedShell() {
     if (event.target.closest('[data-save-profile]')) {
       saveProfileSettings().catch((error) => {
         toast(error.message || 'No se pudo actualizar el perfil.', 'error');
+      });
+      return;
+    }
+
+    if (event.target.closest('[data-admin-lock-predictions]')) {
+      if (!state.user?.isAdmin) return;
+      const confirmed = window.confirm('Esto cerrara todas las predicciones para todos los usuarios. Continuar?');
+      if (!confirmed) return;
+      setPredictionsLock(true).catch((error) => {
+        toast(error.message || 'No se pudo bloquear las predicciones.', 'error');
+      });
+      return;
+    }
+
+    if (event.target.closest('[data-admin-unlock-predictions]')) {
+      if (!state.user?.isAdmin) return;
+      const confirmed = window.confirm('Esto volvera a permitir que los usuarios editen sus predicciones abiertas. Continuar?');
+      if (!confirmed) return;
+      setPredictionsLock(false).catch((error) => {
+        toast(error.message || 'No se pudo reabrir las predicciones.', 'error');
       });
       return;
     }
@@ -2889,6 +2943,102 @@ function renderProfileModal() {
   `;
 }
 
+function renderWorstTeamPredictionCard() {
+  const teams = (state.worstTeamPrediction.teams && state.worstTeamPrediction.teams.length)
+    ? state.worstTeamPrediction.teams
+    : getTournamentTeams();
+  const selectedTeam = state.worstTeamPrediction.predictedWorstTeam || '';
+  const draftTeam = getWorstTeamDraftValue();
+  const locked = Boolean(state.worstTeamPrediction.locked);
+  const disabled = locked || state.savingWorstTeamPrediction || !teams.length;
+  const currentLabel = draftTeam || 'Selecciona un equipo';
+
+  return `
+    <section class="prediction-special-card">
+      <div class="prediction-special-copy">
+        <p class="eyebrow">Pronostico extra</p>
+        <h3>Peor equipo del torneo</h3>
+        <p>Elige una sola seleccion para marcar cual crees que hara el peor papel del Mundial.</p>
+      </div>
+      <div class="prediction-special-controls">
+        <div class="prediction-special-field">
+          <span>Equipo</span>
+          <div class="prediction-special-dropdown ${state.worstTeamPrediction.isOpen ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''}">
+            <button class="prediction-special-trigger" type="button" data-toggle-worst-team ${disabled ? 'disabled' : ''} aria-haspopup="listbox" aria-expanded="${state.worstTeamPrediction.isOpen ? 'true' : 'false'}">
+              <span class="prediction-special-trigger-value">
+                ${draftTeam ? `${renderFlag(draftTeam)}<strong>${escapeHtml(currentLabel)}</strong>` : `<strong>${escapeHtml(currentLabel)}</strong>`}
+              </span>
+              <span class="prediction-special-trigger-icon">▾</span>
+            </button>
+            ${state.worstTeamPrediction.isOpen ? `
+              <div class="prediction-special-menu" role="listbox" aria-label="Selecciona el peor equipo">
+                <button class="prediction-special-option ${draftTeam === '' ? 'is-selected' : ''}" type="button" data-select-worst-team="">
+                  <span class="prediction-special-option-copy">
+                    <strong>Sin seleccionar</strong>
+                  </span>
+                </button>
+                ${teams.map((team) => `
+                  <button class="prediction-special-option ${team === draftTeam ? 'is-selected' : ''}" type="button" data-select-worst-team="${escapeHtml(team)}">
+                    <span class="prediction-special-option-flag">${renderFlag(team)}</span>
+                    <span class="prediction-special-option-copy">
+                      <strong>${escapeHtml(team)}</strong>
+                    </span>
+                  </button>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+        <button class="primary-button prediction-special-save" type="button" data-save-worst-team ${disabled ? 'disabled' : ''}>
+          ${state.savingWorstTeamPrediction ? 'Guardando...' : 'Guardar equipo'}
+        </button>
+      </div>
+      <p class="prediction-special-status">
+        ${locked
+          ? (selectedTeam ? `Prediccion cerrada. Tu eleccion fue ${escapeHtml(selectedTeam)}.` : 'Prediccion cerrada. No dejaste un equipo seleccionado.')
+          : (selectedTeam ? `Equipo elegido: ${escapeHtml(selectedTeam)}.` : 'Aun no has elegido el peor equipo.')}
+      </p>
+    </section>
+  `;
+}
+
+function renderMyPredictionsCardsByStage(predictions) {
+  if (!predictions.length) {
+    return '<p class="empty-state">Aun no tienes predicciones guardadas.</p>';
+  }
+
+  const stageOrder = ['group', 'roundOf32', 'roundOf16', 'quarterfinal', 'semifinal', 'thirdPlace', 'final'];
+
+  return stageOrder
+    .filter((stage) => predictions.some((item) => item.stage === stage))
+    .map((stage) => {
+      const stagePredictions = predictions.filter((item) => item.stage === stage);
+      return `
+        <section class="prediction-stage prediction-stage-history" data-stage-section="${escapeHtml(stage)}">
+          <header class="prediction-stage-header">
+            <h3>${escapeHtml(stageLabel(stage))}</h3>
+            <span>${stagePredictions.length} partido${stagePredictions.length === 1 ? '' : 's'}</span>
+          </header>
+          ${renderMyPredictionsCards(stagePredictions)}
+        </section>
+      `;
+    })
+    .join('');
+}
+
+function renderClosedPredictionsState(predictions) {
+  return `
+    <section class="prediction-stage prediction-stage-locked">
+      <header class="prediction-stage-header">
+        <h3>Tus predicciones guardadas</h3>
+        <span>${predictions.length} registro${predictions.length === 1 ? '' : 's'}</span>
+      </header>
+      <p class="prediction-stage-note">Las predicciones estan cerradas por ahora. Aqui puedes revisar lo que ya dejaste guardado.</p>
+    </section>
+    ${renderMyPredictionsCardsByStage(predictions)}
+  `;
+}
+
 function ensureProfileModal() {
   const existing = document.getElementById('profileModal');
   if (existing) existing.remove();
@@ -2920,7 +3070,42 @@ function syncProfileModal() {
   if (removeButton) removeButton.disabled = !(state.profileDraftImage || state.user?.avatarImage);
 }
 
-function openProfileModal() {
+async function fetchAdminSettings({ silent = false } = {}) {
+  if (!state.user?.isAdmin) return null;
+
+  try {
+    const settings = await apiFetch('/admin/settings');
+    state.adminSettings = settings;
+    return settings;
+  } catch (error) {
+    if (!silent) {
+      toast(error.message || 'No se pudo cargar la configuracion de admin.', 'error');
+    }
+    throw error;
+  }
+}
+
+async function setPredictionsLock(locked) {
+  if (!state.user?.isAdmin) return;
+
+  const payload = await apiFetch('/admin/predictions-lock', {
+    method: 'POST',
+    body: JSON.stringify({ locked })
+  });
+
+  state.adminSettings = {
+    ...(state.adminSettings || {}),
+    predictionsLocked: Boolean(payload.predictionsLocked),
+    updatedAt: payload.updatedAt
+  };
+  updateAdminPredictionsLockVisibility();
+  ensureProfileModal();
+  syncProfileModal();
+  await loadMatches();
+  toast(payload.message || (locked ? 'Predicciones bloqueadas.' : 'Predicciones reabiertas.'));
+}
+
+async function openProfileModal() {
   state.profileDraftImage = state.user?.avatarImage || '';
   ensureProfileModal();
   const modal = document.getElementById('profileModal');
@@ -3042,12 +3227,7 @@ function refreshPredictionStageSection(stage) {
 
   const stageMatches = state.matches.filter((match) => match.stage === stage && !match.locked);
   const summary = getStagePredictionState(stageMatches);
-  const progress = section.querySelector('[data-prediction-progress]');
   const actionButton = section.querySelector('[data-stage-save-trigger]');
-
-  if (progress) {
-    progress.outerHTML = renderPredictionProgress(stageMatches);
-  }
 
   if (actionButton) {
     actionButton.disabled = summary.saved;
@@ -3164,14 +3344,62 @@ async function confirmPredictionStageSave(stage) {
   }
 }
 
+async function saveWorstTeamPrediction() {
+  state.savingWorstTeamPrediction = true;
+  state.worstTeamPrediction.isOpen = false;
+  renderFixture(state.matches, state.myPredictions);
+
+  try {
+    const payload = await apiFetch('/predictions/worst-team', {
+      method: 'PUT',
+      body: JSON.stringify({
+        predictedWorstTeam: getWorstTeamDraftValue()
+      })
+    });
+
+    state.worstTeamPrediction = {
+      ...state.worstTeamPrediction,
+      predictedWorstTeam: payload.predictedWorstTeam || '',
+      teams: payload.teams || state.worstTeamPrediction.teams,
+      locked: Boolean(payload.locked),
+      draft: payload.predictedWorstTeam || '',
+      isOpen: false
+    };
+    state.user = {
+      ...(state.user || {}),
+      predictedWorstTeam: payload.predictedWorstTeam || ''
+    };
+    localStorage.setItem('pm_user', JSON.stringify(state.user));
+    toast(payload.predictedWorstTeam ? 'Peor equipo guardado.' : 'Seleccion eliminada.');
+  } catch (error) {
+    toast(error.message || 'No se pudo guardar el peor equipo.', 'error');
+  } finally {
+    state.savingWorstTeamPrediction = false;
+    renderFixture(state.matches, state.myPredictions);
+  }
+}
+
 async function loadMatches() {
   try {
-    const [matches, myPredictions] = await Promise.all([
+    const [matches, myPredictions, worstTeamPrediction] = await Promise.all([
       apiFetch('/matches'),
-      apiFetch('/predictions/me')
+      apiFetch('/predictions/me'),
+      apiFetch('/predictions/worst-team')
     ]);
     state.matches = matches;
     state.myPredictions = myPredictions;
+    state.worstTeamPrediction = {
+      predictedWorstTeam: worstTeamPrediction.predictedWorstTeam || '',
+      teams: worstTeamPrediction.teams || [],
+      locked: Boolean(worstTeamPrediction.locked),
+      draft: worstTeamPrediction.predictedWorstTeam || '',
+      isOpen: false
+    };
+    state.user = {
+      ...(state.user || {}),
+      predictedWorstTeam: worstTeamPrediction.predictedWorstTeam || ''
+    };
+    localStorage.setItem('pm_user', JSON.stringify(state.user));
     syncPredictionDrafts(matches);
     renderFixture(state.matches, state.myPredictions);
   } catch (error) {
@@ -3184,6 +3412,13 @@ async function loadMatches() {
     state.matches = [];
     state.myPredictions = [];
     state.predictionDrafts = {};
+    state.worstTeamPrediction = {
+      predictedWorstTeam: '',
+      teams: [],
+      locked: false,
+      draft: '',
+      isOpen: false
+    };
     renderFixture(state.matches, state.myPredictions);
     toast(error.message || 'No se pudo cargar el API.', 'error');
   }
@@ -3192,6 +3427,12 @@ async function loadMatches() {
 async function initDashboardPage() {
   if (!document.getElementById('groupsBoard')) return;
   if (!(await requireAuth())) return;
+
+  if (state.user?.isAdmin) {
+    try {
+      await fetchAdminSettings({ silent: true });
+    } catch {}
+  }
 
   const requestedView = new URLSearchParams(window.location.search).get('view');
   if (['standings', 'matches', 'predictions', 'bracket'].includes(requestedView)) {
@@ -3260,6 +3501,34 @@ async function initDashboardPage() {
   });
 
   document.addEventListener('click', (event) => {
+    const worstTeamToggle = event.target.closest('[data-toggle-worst-team]');
+    if (worstTeamToggle) {
+      if (state.worstTeamPrediction.locked || state.savingWorstTeamPrediction) return;
+      state.worstTeamPrediction.isOpen = !state.worstTeamPrediction.isOpen;
+      renderFixture(state.matches, state.myPredictions);
+      return;
+    }
+
+    const worstTeamOption = event.target.closest('[data-select-worst-team]');
+    if (worstTeamOption) {
+      if (state.worstTeamPrediction.locked || state.savingWorstTeamPrediction) return;
+      state.worstTeamPrediction.draft = worstTeamOption.dataset.selectWorstTeam || '';
+      state.worstTeamPrediction.isOpen = false;
+      renderFixture(state.matches, state.myPredictions);
+      return;
+    }
+
+    if (event.target.closest('[data-save-worst-team]')) {
+      saveWorstTeamPrediction();
+      return;
+    }
+
+    if (state.worstTeamPrediction.isOpen && !event.target.closest('.prediction-special-dropdown')) {
+      state.worstTeamPrediction.isOpen = false;
+      renderFixture(state.matches, state.myPredictions);
+      return;
+    }
+
     const jumpButton = event.target.closest('[data-jump-stage]');
     if (!jumpButton) return;
 
@@ -3429,7 +3698,7 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         <div class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}" style="animation-delay:${index * 45}ms">
           <div class="rank-number">${row.rank}</div>
           <div class="leaderboard-user">
-            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' Â· tu' : ''}</div>
+            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}</div>
             <div class="points-track"><span style="width:${percent}%"></span></div>
           </div>
           <div class="leaderboard-points">${row.points} pts</div>
@@ -3453,6 +3722,12 @@ async function initLeaderboardPage() {
   if (!list) return;
   if (!(await requireAuth())) return;
 
+  if (state.user?.isAdmin) {
+    try {
+      await fetchAdminSettings({ silent: true });
+    } catch {}
+  }
+
   setupSharedLayout();
   updateBottomNavState();
 
@@ -3469,30 +3744,6 @@ async function initLeaderboardPage() {
   });
   window.addEventListener('focus', refreshLeaderboard);
   window.addEventListener('beforeunload', () => window.clearInterval(refreshInterval), { once: true });
-  return;
-
-  try {
-    const leaderboard = await apiFetch('/leaderboard');
-    const maxPoints   = Math.max(...leaderboard.map((row) => row.points), 1);
-    list.innerHTML = leaderboard.map((row, index) => {
-      const percent = Math.max((row.points / maxPoints) * 100, 6);
-      return `
-        <div class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}" style="animation-delay:${index * 45}ms">
-          <div class="rank-number">${row.rank}</div>
-          <div class="leaderboard-user">
-            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' · tu' : ''}</div>
-            <div class="points-track"><span style="width:${percent}%"></span></div>
-          </div>
-          <div class="leaderboard-points">${row.points} pts</div>
-        </div>
-      `;
-    }).join('');
-    emptyState.classList.toggle('hidden', leaderboard.length > 0);
-  } catch (error) {
-    list.innerHTML = '';
-    emptyState.classList.remove('hidden');
-    toast(error.message || 'No se pudo cargar la tabla.', 'error');
-  }
 }
 
 initAuthPage();

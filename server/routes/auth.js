@@ -101,6 +101,7 @@ function publicUser(user) {
     isAdmin: user.isAdmin,
     avatarPreset: user.avatarPreset || '',
     avatarImage: user.avatarImage || '',
+    predictedWorstTeam: user.predictedWorstTeam || '',
     totalPoints: user.totalPoints
   };
 }

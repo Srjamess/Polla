@@ -3,6 +3,7 @@ const Match = require('../models/Match');
 const Prediction = require('../models/Prediction');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { recalculateAllScores } = require('../utils/scoring');
+const { getAppSettings } = require('../utils/appSettings');
 const {
   buildPredictionMap,
   buildResolutionContext,
@@ -25,6 +26,7 @@ router.use(authenticate);
 
 router.get('/', async (req, res) => {
   try {
+    const settings = await getAppSettings();
     const matches = await Match.find();
     const predictions = await Prediction.find({ user: req.user._id });
     const predictionByMatch = new Map(
@@ -38,10 +40,14 @@ router.get('/', async (req, res) => {
       const prediction = predictionByMatch.get(match._id.toString());
       const actualTeams = resolveMatchTeams(match, actualContext);
       const predictedTeams = resolveMatchTeams(match, predictedContext);
+      const lockedBySchedule = match.matchDate <= new Date();
+      const lockedByResult = Boolean(match.resultSet);
+      const locked = Boolean(settings.predictionsLocked || lockedBySchedule || lockedByResult);
 
       return {
         ...match.toObject(),
-        locked: match.matchDate <= new Date(),
+        locked,
+        lockedByAdmin: Boolean(settings.predictionsLocked),
         actualResolvedTeamA: actualTeams.teamA || '',
         actualResolvedTeamB: actualTeams.teamB || '',
         predictedResolvedTeamA: predictedTeams.teamA || '',

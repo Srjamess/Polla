@@ -39,6 +39,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    predictedWorstTeam: {
+      type: String,
+      default: ''
+    },
     totalPoints: {
       type: Number,
       default: 0

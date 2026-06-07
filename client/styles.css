@@ -551,6 +551,155 @@ input[type="number"]::-webkit-inner-spin-button {
   margin-bottom: 16px;
 }
 
+.prediction-special-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  margin-inline: auto;
+  padding: 16px;
+  width: min(100%, 760px);
+  border: 0.5px solid var(--border);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(74, 222, 128, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+}
+
+.prediction-special-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.prediction-special-copy h3,
+.prediction-special-copy p {
+  margin: 0;
+}
+
+.prediction-special-copy p:last-child,
+.prediction-special-status,
+.prediction-special-field span {
+  color: var(--text-secondary);
+}
+
+.prediction-special-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.prediction-special-field {
+  display: grid;
+  gap: 8px;
+  position: relative;
+}
+
+.prediction-special-dropdown {
+  position: relative;
+}
+
+.prediction-special-dropdown.is-disabled {
+  opacity: 0.72;
+}
+
+.prediction-special-trigger {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.prediction-special-trigger-value {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prediction-special-trigger-value strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prediction-special-trigger-icon {
+  color: var(--text-secondary);
+}
+
+.prediction-special-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  background: #16161c;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.prediction-special-menu::-webkit-scrollbar {
+  display: none;
+}
+
+.prediction-special-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.prediction-special-option:hover,
+.prediction-special-option:focus-visible,
+.prediction-special-option.is-selected {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.prediction-special-option-copy {
+  min-width: 0;
+  display: grid;
+}
+
+.prediction-special-option-flag .flag-mark,
+.prediction-special-trigger-value .flag-mark {
+  width: 24px;
+  height: 24px;
+}
+
+.prediction-special-save {
+  width: 100%;
+}
+
+.prediction-special-status {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.prediction-stage-note {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 #predictionsBoard,
 #predictionsBoard .screen-section,
 #predictionsBoard .prediction-sections,
@@ -967,40 +1116,6 @@ input[type="number"]::-webkit-inner-spin-button {
 .prediction-stage-chip.is-active {
   color: var(--text-primary);
   border-bottom-color: var(--text-primary);
-}
-
-.prediction-progress {
-  display: grid;
-  gap: 8px;
-  padding: 8px 0 10px;
-  background: var(--bg);
-  border-bottom: 0.5px solid var(--border-light);
-}
-
-.prediction-progress-copy {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.prediction-progress-copy strong {
-  color: var(--text-primary);
-}
-
-.prediction-progress-track {
-  height: 6px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.prediction-progress-track span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent-green);
 }
 
 .prediction-stage-actions {
@@ -2128,6 +2243,15 @@ body.modal-open {
     background: var(--accent-green-bg);
   }
 
+  .prediction-special-controls {
+    grid-template-columns: minmax(0, 1fr) 200px;
+    align-items: end;
+  }
+
+  .prediction-special-card {
+    width: min(100%, 680px);
+  }
+
   .standings-grid,
   .leaderboard-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2136,6 +2260,11 @@ body.modal-open {
   .fixture-schedule,
   .prediction-sections {
     gap: 20px;
+  }
+
+  .prediction-special-controls {
+    grid-template-columns: minmax(0, 1fr) 200px;
+    align-items: end;
   }
 
   .fixture-day-group,
@@ -2199,10 +2328,6 @@ body.modal-open {
     grid-template-columns: repeat(3, minmax(320px, 1fr));
   }
 
-  .my-predictions-cards {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .modal-shell,
   .sheet-shell {
     align-items: center;
@@ -2220,6 +2345,19 @@ body.modal-open {
   .modal-card,
   .predictions-sheet-card {
     height: min(82vh, 860px);
+  }
+
+  .predictions-sheet-card {
+    width: min(980px, calc(100vw - 64px));
+  }
+
+  .predictions-sheet-body {
+    padding: 0 24px 24px;
+  }
+
+  .predictions-sheet-body .my-predictions-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
   }
 
   .sheet-card {

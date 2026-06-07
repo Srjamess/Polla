@@ -3,10 +3,20 @@ const Match = require('../models/Match');
 const Prediction = require('../models/Prediction');
 const { authenticate } = require('../middleware/auth');
 const { recalculateAllScores } = require('../utils/scoring');
+const { getAppSettings } = require('../utils/appSettings');
 
 const router = express.Router();
 
 router.use(authenticate);
+
+function getUniqueTeams(matches) {
+  return [...new Set(
+    matches
+      .flatMap((match) => [match.teamA, match.teamB])
+      .map((team) => String(team || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, 'es'));
+}
 
 router.get('/me', async (req, res) => {
   try {
@@ -48,8 +58,54 @@ router.get('/me', async (req, res) => {
   }
 });
 
+router.get('/worst-team', async (req, res) => {
+  try {
+    const settings = await getAppSettings();
+    const matches = await Match.find().select('teamA teamB');
+    const teams = getUniqueTeams(matches);
+    const locked = Boolean(settings.predictionsLocked);
+
+    res.json({
+      predictedWorstTeam: req.user.predictedWorstTeam || '',
+      teams,
+      locked
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not fetch worst team prediction.' });
+  }
+});
+
+router.put('/worst-team', async (req, res) => {
+  try {
+    const settings = await getAppSettings();
+    if (settings.predictionsLocked) {
+      return res.status(403).json({ message: 'Worst team prediction is locked.' });
+    }
+
+    const matches = await Match.find().select('teamA teamB');
+    const teams = getUniqueTeams(matches);
+    const predictedWorstTeam = String(req.body?.predictedWorstTeam || '').trim();
+
+    if (predictedWorstTeam && !teams.includes(predictedWorstTeam)) {
+      return res.status(400).json({ message: 'Select a valid team.' });
+    }
+
+    req.user.predictedWorstTeam = predictedWorstTeam;
+    await req.user.save();
+
+    res.json({
+      predictedWorstTeam: req.user.predictedWorstTeam || '',
+      teams,
+      locked: false
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not save worst team prediction.' });
+  }
+});
+
 router.post('/:matchId', async (req, res) => {
   try {
+    const settings = await getAppSettings();
     const { predictedScoreA, predictedScoreB, predictedQualifiedTeam } = req.body;
     const parsedScoreA = Number(predictedScoreA);
     const parsedScoreB = Number(predictedScoreB);
@@ -69,7 +125,7 @@ router.post('/:matchId', async (req, res) => {
       return res.status(404).json({ message: 'Match not found.' });
     }
 
-    if (match.matchDate <= new Date() || match.resultSet) {
+    if (settings.predictionsLocked || match.matchDate <= new Date() || match.resultSet) {
       return res.status(403).json({ message: 'Predictions are locked for this match.' });
     }
 

@@ -25,6 +25,8 @@
 
         <div class="sidebar-block sidebar-actions">
           <button class="sidebar-link sidebar-link-secondary" type="button" data-open-profile>Perfil</button>
+          <button class="sidebar-link sidebar-link-secondary hidden" type="button" data-admin-lock-predictions>Bloquear predicciones</button>
+          <button class="sidebar-link sidebar-link-secondary hidden" type="button" data-admin-unlock-predictions>Reabrir predicciones</button>
           <button class="sidebar-link sidebar-link-secondary" type="button" data-open-scoring>Calificacion</button>
           <button class="sidebar-link sidebar-link-secondary" type="button" data-open-predictions-help>Como predecir</button>
           <button class="sidebar-link sidebar-link-secondary" type="button" data-logout>Salir</button>
@@ -80,6 +82,14 @@
           <button class="sheet-item sheet-item-danger hidden" type="button" data-admin-reset-pruebas>
             <span class="sheet-item-icon">!</span>
             <span class="sheet-item-label">Reset pruebas</span>
+          </button>
+          <button class="sheet-item hidden" type="button" data-admin-lock-predictions>
+            <span class="sheet-item-icon">🔒</span>
+            <span class="sheet-item-label">Bloquear predicciones</span>
+          </button>
+          <button class="sheet-item hidden" type="button" data-admin-unlock-predictions>
+            <span class="sheet-item-icon">🔓</span>
+            <span class="sheet-item-label">Reabrir predicciones</span>
           </button>
           <button class="sheet-item" type="button" data-open-profile>
             <span class="sheet-item-icon">◉</span>
