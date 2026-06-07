@@ -23,6 +23,12 @@ const state = {
   bracketTab: 'real'
 };
 
+const firebaseSession = {
+  auth: null,
+  readyPromise: null,
+  stateReadyPromise: null
+};
+
 const AVATAR_PRESET_SECTIONS = [
   {
     title: 'Futbol',
@@ -319,6 +325,138 @@ function clearSession() {
   state.profileDraftImage = '';
 }
 
+async function initializeFirebaseAuth() {
+  if (firebaseSession.readyPromise) {
+    return firebaseSession.readyPromise;
+  }
+
+  firebaseSession.readyPromise = (async () => {
+    if (!window.firebase?.initializeApp || !window.firebase?.auth) {
+      throw new Error('Firebase Auth no pudo cargarse en el navegador.');
+    }
+
+    const response = await fetch(`${API_BASE}/auth/config`);
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok || !payload.enabled || !payload.firebaseConfig?.apiKey) {
+      throw new Error(payload.message || 'No se pudo cargar la configuracion de Firebase.');
+    }
+
+    if (!window.firebase.apps.length) {
+      window.firebase.initializeApp(payload.firebaseConfig);
+    }
+
+    const auth = window.firebase.auth();
+    await auth.setPersistence(window.firebase.auth.Auth.Persistence.LOCAL);
+    firebaseSession.auth = auth;
+    return auth;
+  })();
+
+  return firebaseSession.readyPromise;
+}
+
+async function waitForFirebaseUserResolution(auth) {
+  if (firebaseSession.stateReadyPromise) {
+    return firebaseSession.stateReadyPromise;
+  }
+
+  firebaseSession.stateReadyPromise = new Promise((resolve) => {
+    const unsubscribe = auth.onAuthStateChanged(() => {
+      unsubscribe();
+      resolve();
+    });
+  });
+
+  return firebaseSession.stateReadyPromise;
+}
+
+async function getFreshAccessToken(forceRefresh = false) {
+  const auth = await initializeFirebaseAuth();
+  await waitForFirebaseUserResolution(auth);
+
+  if (!auth.currentUser) {
+    return state.token || null;
+  }
+
+  const token = await auth.currentUser.getIdToken(forceRefresh);
+
+  if (token) {
+    state.token = token;
+    localStorage.setItem('pm_token', token);
+  }
+
+  return token;
+}
+
+async function signOutFirebaseSession() {
+  try {
+    const auth = await initializeFirebaseAuth();
+    await auth.signOut();
+  } catch {
+    // Ignore Firebase sign-out errors and clear the local session anyway.
+  }
+
+  clearSession();
+}
+
+async function syncSessionFromFirebase() {
+  const auth = await initializeFirebaseAuth();
+  await waitForFirebaseUserResolution(auth);
+
+  if (!auth.currentUser) {
+    clearSession();
+    return false;
+  }
+
+  const idToken = await getFreshAccessToken();
+
+  try {
+    const payload = await apiFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ idToken })
+    });
+    setSession(payload);
+    return true;
+  } catch (error) {
+    clearSession();
+    throw error;
+  }
+}
+
+async function signInWithGoogle() {
+  const auth = await initializeFirebaseAuth();
+  const provider = new window.firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  const credential = await auth.signInWithPopup(provider);
+  const idToken = await credential.user.getIdToken(true);
+  const payload = await apiFetch('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ idToken })
+  });
+
+  setSession(payload);
+  window.location.href = 'dashboard.html';
+}
+
+function getFirebaseAuthErrorMessage(error) {
+  const code = String(error?.code || '');
+
+  if (code === 'auth/unauthorized-domain') {
+    return 'Firebase bloqueo el popup porque este dominio no esta autorizado. Agrega localhost en Authorized domains.';
+  }
+
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Cerraste la ventana de Google antes de completar el ingreso.';
+  }
+
+  if (code === 'auth/account-exists-with-different-credential') {
+    return 'Ese correo ya existe con otro metodo de acceso.';
+  }
+
+  return error?.message || 'No se pudo completar la autenticacion.';
+}
+
 function toast(message, type = 'success') {
   const root = document.getElementById('toastRoot');
   if (!root) return;
@@ -331,7 +469,8 @@ function toast(message, type = 'success') {
 
 async function apiFetch(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const token = path === '/auth/config' ? null : await getFreshAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const data = await response.json().catch(() => ({}));
@@ -353,8 +492,15 @@ function setSession(payload) {
   localStorage.setItem('pm_user', JSON.stringify(payload.user));
 }
 
-function requireAuth() {
-  if (!state.token) {
+async function requireAuth() {
+  try {
+    const hasSession = await syncSessionFromFirebase();
+    if (hasSession) return true;
+  } catch {
+    clearSession();
+  }
+
+  if (!state.token || !state.user) {
     window.location.href = 'index.html';
     return false;
   }
@@ -2445,7 +2591,7 @@ function initSharedShell() {
     }
 
     if (event.target.closest('[data-logout]')) {
-      clearSession();
+      signOutFirebaseSession();
       window.location.href = 'index.html';
       return;
     }
@@ -2976,9 +3122,9 @@ async function loadMatches() {
   }
 }
 
-function initDashboardPage() {
+async function initDashboardPage() {
   if (!document.getElementById('groupsBoard')) return;
-  if (!requireAuth()) return;
+  if (!(await requireAuth())) return;
 
   const requestedView = new URLSearchParams(window.location.search).get('view');
   if (['standings', 'matches', 'predictions', 'bracket'].includes(requestedView)) {
@@ -3114,7 +3260,8 @@ function initDashboardPage() {
 function initAuthPage() {
   const loginForm    = document.getElementById('loginForm');
   const registerForm = document.getElementById('registerForm');
-  if (!loginForm || !registerForm) return;
+  const googleLoginButton = document.getElementById('googleLoginButton');
+  if (!loginForm || !registerForm || !googleLoginButton) return;
 
   const authCard      = document.querySelector('.auth-card');
   const toggleButtons = document.querySelectorAll('[data-auth-mode]');
@@ -3129,12 +3276,32 @@ function initAuthPage() {
     });
   });
 
+  initializeFirebaseAuth()
+    .then(async () => {
+      const auth = firebaseSession.auth;
+      await waitForFirebaseUserResolution(auth);
+      if (auth.currentUser) {
+        await syncSessionFromFirebase();
+        window.location.href = 'dashboard.html';
+      }
+    })
+    .catch((error) => {
+      toast(error.message || 'No se pudo iniciar Firebase Auth.', 'error');
+    });
+
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
+      const auth = await initializeFirebaseAuth();
+      const formData = Object.fromEntries(new FormData(loginForm));
+      const credential = await auth.signInWithEmailAndPassword(
+        String(formData.email || '').trim(),
+        String(formData.password || '')
+      );
+      const idToken = await credential.user.getIdToken();
       const payload = await apiFetch('/auth/login', {
         method: 'POST',
-        body: JSON.stringify(Object.fromEntries(new FormData(loginForm)))
+        body: JSON.stringify({ idToken })
       });
       setSession(payload);
       window.location.href = 'dashboard.html';
@@ -3146,14 +3313,35 @@ function initAuthPage() {
   registerForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
+      const auth = await initializeFirebaseAuth();
+      const formData = Object.fromEntries(new FormData(registerForm));
+      const credential = await auth.createUserWithEmailAndPassword(
+        String(formData.email || '').trim(),
+        String(formData.password || '')
+      );
+      await credential.user.updateProfile({
+        displayName: String(formData.username || '').trim()
+      });
+      const idToken = await credential.user.getIdToken(true);
       const payload = await apiFetch('/auth/register', {
         method: 'POST',
-        body: JSON.stringify(Object.fromEntries(new FormData(registerForm)))
+        body: JSON.stringify({
+          idToken,
+          username: String(formData.username || '').trim()
+        })
       });
       setSession(payload);
       window.location.href = 'dashboard.html';
     } catch (error) {
       toast(error.message, 'error');
+    }
+  });
+
+  googleLoginButton.addEventListener('click', async () => {
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      toast(getFirebaseAuthErrorMessage(error), 'error');
     }
   });
 
@@ -3193,7 +3381,7 @@ async function initLeaderboardPage() {
   const list       = document.getElementById('leaderboardList');
   const emptyState = document.getElementById('emptyLeaderboard');
   if (!list) return;
-  if (!requireAuth()) return;
+  if (!(await requireAuth())) return;
 
   setupSharedLayout();
   updateBottomNavState();

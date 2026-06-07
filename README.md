@@ -1,12 +1,12 @@
 # Polla Mundialista
 
-Aplicacion full-stack para hacer predicciones de partidos del Mundial. Incluye autenticacion con JWT, usuarios, partidos, predicciones, calculo de puntos y leaderboard.
+Aplicacion full-stack para hacer predicciones de partidos del Mundial. Incluye autenticacion con Firebase, usuarios, partidos, predicciones, calculo de puntos y leaderboard.
 
 ## Stack
 
 - Node.js + Express
 - MongoDB Atlas + Mongoose
-- JWT + bcrypt
+- Firebase Authentication + Firebase Admin
 - HTML, CSS y JavaScript vanilla
 
 ## Estructura
@@ -53,9 +53,25 @@ cp .env.example .env
 
 ```env
 MONGO_URI=mongodb+srv://USER:PASSWORD@cluster.mongodb.net/polla_mundialista?retryWrites=true&w=majority
-JWT_SECRET=un-secreto-largo-y-seguro
 PORT=3000
+FIREBASE_API_KEY=your-firebase-web-api-key
+FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
+FIREBASE_MESSAGING_SENDER_ID=1234567890
+FIREBASE_APP_ID=1:1234567890:web:abcdef123456
+FIREBASE_MEASUREMENT_ID=G-ABCDEFGH
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY\n-----END PRIVATE KEY-----\n"
 ```
+
+## Configuracion de Firebase Auth
+
+1. Crea un proyecto en Firebase.
+2. Habilita `Email/Password` en `Authentication > Sign-in method`.
+3. Agrega `localhost` en `Authentication > Settings > Authorized domains`.
+4. Copia la configuracion web del proyecto a las variables `FIREBASE_*` del `.env`.
+5. Crea una Service Account en `Project settings > Service accounts` y copia `client_email`, `project_id` y `private_key` al `.env`.
 
 4. Ejecuta el servidor:
 
@@ -111,6 +127,7 @@ El script borra los partidos existentes e inserta un fixture demo con grupos A/B
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
+- `GET /api/auth/config`
 
 ### Partidos
 
@@ -142,15 +159,20 @@ Start Command: npm start
 
 ```txt
 MONGO_URI
-JWT_SECRET
 PORT
+FIREBASE_API_KEY
+FIREBASE_AUTH_DOMAIN
+FIREBASE_PROJECT_ID
+FIREBASE_APP_ID
+FIREBASE_CLIENT_EMAIL
+FIREBASE_PRIVATE_KEY
 ```
 
 Render asigna `PORT` automaticamente, pero puedes dejarlo configurado si lo necesitas. El servidor Express sirve la carpeta `client/` como archivos estaticos.
 
 ## Notas
 
-- No hay verificacion por email.
+- Firebase maneja la sesion del usuario y el backend verifica su `ID token`.
 - No hay sistema avanzado de roles.
-- El frontend usa `localStorage` para guardar el JWT.
-- Todos los endpoints no-auth estan protegidos con middleware JWT.
+- El frontend usa `localStorage` para guardar el perfil y refresca el token con Firebase.
+- Todos los endpoints no-auth estan protegidos con middleware de Firebase Auth.

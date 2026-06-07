@@ -1,5 +1,9 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { getFirebaseAuth } = require('../utils/firebaseAdmin');
+
+async function verifyFirebaseToken(token) {
+  return getFirebaseAuth().verifyIdToken(token);
+}
 
 async function authenticate(req, res, next) {
   try {
@@ -10,8 +14,8 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ message: 'Missing authorization token.' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id).select('-password');
+    const decoded = await verifyFirebaseToken(token);
+    const user = await User.findOne({ firebaseUid: decoded.uid }).select('-password');
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid authorization token.' });
@@ -32,4 +36,4 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, requireAdmin };
+module.exports = { authenticate, requireAdmin, verifyFirebaseToken };

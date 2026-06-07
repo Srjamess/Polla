@@ -19,8 +19,36 @@ if (!process.env.MONGO_URI) {
   process.exit(1);
 }
 
-if (!process.env.JWT_SECRET) {
-  console.error('JWT_SECRET is required.');
+const requiredFirebaseClientEnv = [
+  'FIREBASE_API_KEY',
+  'FIREBASE_AUTH_DOMAIN',
+  'FIREBASE_PROJECT_ID',
+  'FIREBASE_APP_ID'
+];
+
+const missingFirebaseClientEnv = requiredFirebaseClientEnv.filter((key) => !process.env[key]);
+
+if (missingFirebaseClientEnv.length) {
+  console.error(`Missing Firebase client variables: ${missingFirebaseClientEnv.join(', ')}`);
+  process.exit(1);
+}
+
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  const requiredFirebaseAdminEnv = [
+    'FIREBASE_PROJECT_ID',
+    'FIREBASE_CLIENT_EMAIL',
+    'FIREBASE_PRIVATE_KEY'
+  ];
+  const missingFirebaseAdminEnv = requiredFirebaseAdminEnv.filter((key) => !process.env[key]);
+
+  if (missingFirebaseAdminEnv.length) {
+    console.error(`Missing Firebase admin variables: ${missingFirebaseAdminEnv.join(', ')}`);
+    process.exit(1);
+  }
+}
+
+if (!process.env.FIREBASE_AUTH_DOMAIN) {
+  console.error('FIREBASE_AUTH_DOMAIN is required.');
   process.exit(1);
 }
 

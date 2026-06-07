@@ -24,8 +24,8 @@
         <form id="loginForm" class="auth-form active">
           <h2>Bienvenido</h2>
           <label>
-            Usuario
-            <input name="username" type="text" autocomplete="username" required minlength="3" />
+            Correo
+            <input name="email" type="email" autocomplete="email" required />
           </label>
           <label>
             Contraseña
@@ -41,15 +41,33 @@
             <input name="username" type="text" autocomplete="username" required minlength="3" maxlength="32" />
           </label>
           <label>
+            Correo
+            <input name="email" type="email" autocomplete="email" required />
+          </label>
+          <label>
             Contraseña
             <input name="password" type="password" autocomplete="new-password" required minlength="6" />
           </label>
           <button class="primary-button" type="submit">Registrarme</button>
         </form>
+
+        <div class="auth-social">
+          <div class="auth-divider" aria-hidden="true">
+            <span></span>
+            <strong>o</strong>
+            <span></span>
+          </div>
+          <button id="googleLoginButton" class="secondary-button auth-google-button" type="button">
+            Ingresar con Google
+          </button>
+          <p class="auth-social-note">Usa tu cuenta de Google para entrar o crear tu usuario automaticamente.</p>
+        </div>
       </section>
     </main>
 
     <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -10,9 +10,22 @@ const userSchema = new mongoose.Schema(
       minlength: 3,
       maxlength: 32
     },
+    email: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      lowercase: true
+    },
+    firebaseUid: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true
+    },
     password: {
       type: String,
-      required: true
+      default: null
     },
     isAdmin: {
       type: Boolean,

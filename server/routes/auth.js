@@ -1,23 +1,103 @@
 const express = require('express');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, verifyFirebaseToken } = require('../middleware/auth');
 
 const router = express.Router();
 
-function createToken(user) {
-  return jwt.sign(
-    { id: user._id, username: user.username, isAdmin: user.isAdmin },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
+function getFirebaseClientConfig() {
+  return {
+    apiKey: process.env.FIREBASE_API_KEY,
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || '',
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
+    appId: process.env.FIREBASE_APP_ID,
+    measurementId: process.env.FIREBASE_MEASUREMENT_ID || ''
+  };
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim();
+}
+
+function sanitizeUsernameSeed(value) {
+  return String(value || '')
+    .replace(/[^\p{L}\p{N}\s._-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function isUsernameTaken(username, excludeUserId = null) {
+  const existingUser = await User.findOne({
+    username: new RegExp(`^${escapeRegex(username)}$`, 'i')
+  }).select('_id');
+
+  if (!existingUser) return false;
+  if (!excludeUserId) return true;
+
+  return String(existingUser._id) !== String(excludeUserId);
+}
+
+async function buildUniqueUsername(seed) {
+  const baseUsername = sanitizeUsernameSeed(seed).slice(0, 32) || 'Usuario';
+  let candidate = baseUsername;
+  let attempt = 1;
+
+  while (await isUsernameTaken(candidate)) {
+    const suffix = ` ${attempt}`;
+    candidate = `${baseUsername.slice(0, Math.max(0, 32 - suffix.length))}${suffix}`;
+    attempt += 1;
+  }
+
+  return candidate;
+}
+
+async function findUserByFirebaseIdentity(decodedToken) {
+  const normalizedEmail = normalizeEmail(decodedToken.email);
+  let user = await User.findOne({ firebaseUid: decodedToken.uid });
+
+  if (!user && normalizedEmail) {
+    user = await User.findOne({ email: normalizedEmail });
+  }
+
+  if (user && (!user.firebaseUid || (normalizedEmail && user.email !== normalizedEmail))) {
+    user.firebaseUid = decodedToken.uid;
+    if (normalizedEmail) user.email = normalizedEmail;
+    await user.save();
+  }
+
+  return user;
+}
+
+async function verifyTokenFromBody(req, res) {
+  const idToken = String(req.body?.idToken || '').trim();
+
+  if (!idToken) {
+    res.status(400).json({ message: 'Firebase ID token is required.' });
+    return null;
+  }
+
+  try {
+    return await verifyFirebaseToken(idToken);
+  } catch (error) {
+    res.status(401).json({ message: 'Firebase session is invalid.' });
+    return null;
+  }
 }
 
 function publicUser(user) {
   return {
     id: user._id,
     username: user.username,
+    email: user.email || '',
     isAdmin: user.isAdmin,
     avatarPreset: user.avatarPreset || '',
     avatarImage: user.avatarImage || '',
@@ -30,31 +110,51 @@ function isValidDataImage(value) {
   return /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(String(value));
 }
 
+router.get('/config', (req, res) => {
+  res.json({
+    enabled: true,
+    firebaseConfig: getFirebaseClientConfig()
+  });
+});
+
 router.post('/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const decodedToken = await verifyTokenFromBody(req, res);
+    if (!decodedToken) return;
 
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required.' });
+    const username = normalizeUsername(req.body?.username);
+    const email = normalizeEmail(decodedToken.email);
+
+    if (!email) {
+      return res.status(400).json({ message: 'Firebase must return a valid email address.' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+    if (username.length < 3 || username.length > 32) {
+      return res.status(400).json({ message: 'Username must be between 3 and 32 characters.' });
     }
 
-    const existingUser = await User.findOne({ username: username.trim() });
+    const existingIdentity = await findUserByFirebaseIdentity(decodedToken);
 
-    if (existingUser) {
+    if (await isUsernameTaken(username, existingIdentity?._id)) {
       return res.status(409).json({ message: 'Username is already taken.' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    if (existingIdentity) {
+      existingIdentity.username = username;
+      existingIdentity.email = email;
+      existingIdentity.firebaseUid = decodedToken.uid;
+      await existingIdentity.save();
+
+      return res.status(200).json({ token: req.body.idToken, user: publicUser(existingIdentity) });
+    }
+
     const user = await User.create({
-      username: username.trim(),
-      password: hashedPassword
+      username,
+      email,
+      firebaseUid: decodedToken.uid
     });
 
-    res.status(201).json({ token: createToken(user), user: publicUser(user) });
+    res.status(201).json({ token: req.body.idToken, user: publicUser(user) });
   } catch (error) {
     res.status(500).json({ message: 'Registration failed.' });
   }
@@ -62,25 +162,26 @@ router.post('/register', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const decodedToken = await verifyTokenFromBody(req, res);
+    if (!decodedToken) return;
 
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required.' });
-    }
-
-    const user = await User.findOne({ username: username.trim() });
+    let user = await findUserByFirebaseIdentity(decodedToken);
 
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials.' });
+      const email = normalizeEmail(decodedToken.email);
+      const seed =
+        sanitizeUsernameSeed(decodedToken.name) ||
+        sanitizeUsernameSeed(email.split('@')[0]) ||
+        'Usuario';
+
+      user = await User.create({
+        username: await buildUniqueUsername(seed),
+        email,
+        firebaseUid: decodedToken.uid
+      });
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.password);
-
-    if (!passwordMatches) {
-      return res.status(401).json({ message: 'Invalid credentials.' });
-    }
-
-    res.json({ token: createToken(user), user: publicUser(user) });
+    res.json({ token: req.body.idToken, user: publicUser(user) });
   } catch (error) {
     res.status(500).json({ message: 'Login failed.' });
   }
