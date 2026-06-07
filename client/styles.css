@@ -381,6 +381,12 @@ input[type="number"]::-webkit-inner-spin-button {
   color: var(--text-secondary);
 }
 
+.topbar-profile-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .user-avatar {
   width: 30px;
   height: 30px;
@@ -392,6 +398,20 @@ input[type="number"]::-webkit-inner-spin-button {
   font-size: 11px;
   overflow: hidden;
   flex-shrink: 0;
+}
+
+.user-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid rgba(250, 204, 21, 0.28);
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .avatar-image {
@@ -1398,6 +1418,14 @@ input[type="number"]::-webkit-inner-spin-button {
   gap: 12px;
 }
 
+.scoring-modal-card {
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(74, 222, 128, 0.12), transparent 30%),
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.1), transparent 24%),
+    var(--surface);
+}
+
 .help-step {
   padding: 14px;
   border: 0.5px solid var(--border);
@@ -1443,18 +1471,39 @@ input[type="number"]::-webkit-inner-spin-button {
 .scoring-hero {
   display: grid;
   gap: 14px;
+  position: relative;
+  overflow: hidden;
+  border: 0.5px solid rgba(74, 222, 128, 0.16);
+  background:
+    radial-gradient(circle at top right, rgba(74, 222, 128, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
 }
 
 .scoring-hero-copy {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .scoring-hero-copy p,
 .scoring-note {
   margin: 0;
-  color: var(--text-secondary);
+  color: rgba(240, 240, 240, 0.8);
   line-height: 1.6;
+}
+
+.scoring-hero-copy p {
+  max-width: 62ch;
+}
+
+.scoring-hero-title {
+  color: var(--text-primary);
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.scoring-hero-subtitle {
+  color: var(--text-secondary);
 }
 
 .scoring-hero-badge,
@@ -1492,6 +1541,10 @@ input[type="number"]::-webkit-inner-spin-button {
 .scoring-stat {
   display: grid;
   gap: 4px;
+  border-color: rgba(74, 222, 128, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015)),
+    rgba(255, 255, 255, 0.02);
 }
 
 .scoring-stat strong {
@@ -1507,11 +1560,42 @@ input[type="number"]::-webkit-inner-spin-button {
   color: var(--text-secondary);
 }
 
+.scoring-hero-grid {
+  margin-top: 2px;
+}
+
+.scoring-rule-card p,
+.scoring-explainer-card p,
+.scoring-timeline-step p,
+.scoring-note {
+  font-size: 13px;
+}
+
 .scoring-rule-card,
 .scoring-explainer-card,
 .scoring-timeline-step {
   display: grid;
   gap: 6px;
+}
+
+.scoring-rule-card {
+  border-color: rgba(255, 255, 255, 0.09);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+}
+
+.scoring-explainer-card {
+  border-color: rgba(250, 204, 21, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.08), transparent 36%),
+    rgba(255, 255, 255, 0.02);
+}
+
+.scoring-timeline-step {
+  border-color: rgba(74, 222, 128, 0.12);
+  background:
+    radial-gradient(circle at top left, rgba(74, 222, 128, 0.08), transparent 34%),
+    rgba(255, 255, 255, 0.02);
 }
 
 .scoring-rule-card strong,
@@ -1522,7 +1606,7 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .scoring-block-accent {
   background:
-    radial-gradient(circle at top right, rgba(74, 222, 128, 0.1), transparent 35%),
+    radial-gradient(circle at top right, rgba(74, 222, 128, 0.14), transparent 35%),
     var(--surface);
 }
 
@@ -1554,10 +1638,10 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .scoring-chip {
   padding: 6px 10px;
-  border: 0.5px solid var(--accent-green-border);
+  border: 0.5px solid rgba(74, 222, 128, 0.18);
   border-radius: 999px;
-  background: var(--accent-green-bg);
-  color: var(--accent-green);
+  background: rgba(74, 222, 128, 0.08);
+  color: #b7f7cd;
   font-size: 12px;
 }
 
@@ -1574,6 +1658,58 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .scoring-note strong {
   color: var(--text-primary);
+}
+
+@media (min-width: 900px) {
+  .scoring-modal-card {
+    width: min(920px, calc(100vw - 56px));
+    height: min(88vh, 900px);
+  }
+
+  .scoring-modal-body {
+    gap: 16px;
+  }
+
+  .scoring-hero {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: 18px;
+  }
+
+  .scoring-hero-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .scoring-explainer {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .scoring-rule-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .scoring-timeline {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .scoring-chip-row {
+    gap: 10px;
+  }
+
+  .scoring-block {
+    padding: 16px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .scoring-modal-card {
+    width: min(980px, calc(100vw - 80px));
+  }
+
+  .scoring-hero {
+    padding: 20px;
+  }
 }
 
 .profile-card,

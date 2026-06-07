@@ -2521,6 +2521,20 @@ function renderCurrentUserAvatar() {
   userAvatar.outerHTML = getAvatarMarkup(state.user, 'user-avatar').replace('<span class="user-avatar"', '<span id="userAvatar" class="user-avatar"');
 }
 
+function updateLeaderboardRankBadge(rank) {
+  const rankBadge = document.getElementById('leaderboardRankBadge');
+  if (!rankBadge) return;
+
+  if (Number.isFinite(rank) && rank > 0) {
+    rankBadge.textContent = `#${rank}`;
+    rankBadge.classList.remove('hidden');
+    return;
+  }
+
+  rankBadge.textContent = '#--';
+  rankBadge.classList.add('hidden');
+}
+
 function decorateLeaderboardAvatars(list, leaderboard) {
   const rows = list.querySelectorAll('.leaderboard-row');
   rows.forEach((rowNode, index) => {
@@ -2759,27 +2773,29 @@ function renderScoringModal() {
           <section class="scoring-hero">
             <div class="scoring-hero-copy">
               <span class="scoring-hero-badge">Resumen rapido</span>
-              <p>Tu puntaje final mezcla aciertos directos de partidos y bonos por leer bien el desarrollo del torneo.</p>
+              <strong class="scoring-hero-title">Puntos por partido + bonos del torneo</strong>
+              <p>Tu puntaje final se arma con dos bloques: puntos por partido y bonos del torneo. Los bonos del bracket se suman por equipo correcto dentro de cada fase.</p>
+              <p class="scoring-hero-subtitle">No son reglas separadas: primero sumas los puntos del partido y después agregas los bonos de grupos, eliminatoria, campeón y peor equipo cuando correspondan.</p>
             </div>
-              <div class="scoring-hero-grid">
-                <article class="scoring-stat">
-                  <strong>3 pts</strong>
-                  <span>Marcador exacto</span>
-                </article>
+            <div class="scoring-hero-grid">
+              <article class="scoring-stat">
+                <strong>3 pts</strong>
+                <span>Marcador exacto</span>
+              </article>
               <article class="scoring-stat">
                 <strong>1 pt</strong>
-                <span>Ganador o empate</span>
+                <span>Resultado correcto</span>
               </article>
-                <article class="scoring-stat">
-                  <strong>+12</strong>
-                  <span>Campeon correcto</span>
-                </article>
-                <article class="scoring-stat">
-                  <strong>+5</strong>
-                  <span>Peor equipo correcto</span>
-                </article>
-              </div>
-            </section>
+              <article class="scoring-stat">
+                <strong>+12</strong>
+                <span>Si aciertas al campeon</span>
+              </article>
+              <article class="scoring-stat">
+                <strong>+5</strong>
+                <span>Peor equipo correcto</span>
+              </article>
+            </div>
+          </section>
 
           <section class="scoring-block scoring-block-accent">
             <div class="scoring-block-head">
@@ -2810,26 +2826,47 @@ function renderScoringModal() {
             <div class="scoring-explainer">
               <article class="scoring-explainer-card">
                 <strong>Fase de grupos</strong>
-                <p>Por cada grupo completo obtienes <strong>2 puntos</strong> por cada clasificado correcto y <strong>1 punto extra</strong> si tambien clavas su posicion exacta.</p>
+                <p>Cuando un grupo ya quedo completo, ganas <strong>2 puntos por cada clasificado correcto</strong> y <strong>1 punto extra</strong> si ademas lo pusiste en la posicion exacta del grupo.</p>
               </article>
-                <article class="scoring-explainer-card">
-                  <strong>Fases eliminatorias</strong>
-                  <p>Los bonos se calculan por cada equipo correcto ubicado en la llave real de esa ronda.</p>
-                </article>
-                <article class="scoring-explainer-card">
-                  <strong>Peor equipo del torneo</strong>
-                  <p>Si aciertas la seleccion marcada al final como peor equipo oficial del torneo, sumas <strong>5 puntos</strong>.</p>
-                </article>
-              </div>
-              <div class="scoring-chip-row">
-                <span class="scoring-chip">Octavos: +2 por equipo</span>
-                <span class="scoring-chip">Cuartos: +3 por equipo</span>
-                <span class="scoring-chip">Semifinal: +5 por equipo</span>
-                <span class="scoring-chip">Final: +8 por equipo</span>
-                <span class="scoring-chip">Tercer puesto: +2 por equipo</span>
-                <span class="scoring-chip">Peor equipo: +5</span>
-                <span class="scoring-chip scoring-chip-gold">Campeon: +12 extra</span>
-              </div>
+              <article class="scoring-explainer-card">
+                <strong>Fases eliminatorias</strong>
+                <p>En cada ronda se revisa si tu llave coincide con la llave real. Sumas puntos <strong>por cada equipo correcto</strong> que hayas ubicado en el lugar correcto.</p>
+              </article>
+              <article class="scoring-explainer-card">
+                <strong>Peor equipo del torneo</strong>
+                <p>Si aciertas la seleccion marcada al final como peor equipo oficial del torneo, sumas <strong>5 puntos</strong>.</p>
+              </article>
+            </div>
+            <div class="scoring-chip-row">
+              <span class="scoring-chip">Octavos: +2 por equipo</span>
+              <span class="scoring-chip">Cuartos: +3 por equipo</span>
+              <span class="scoring-chip">Semifinal: +5 por equipo</span>
+              <span class="scoring-chip">Final: +8 por equipo</span>
+              <span class="scoring-chip">Tercer puesto: +2 por equipo</span>
+              <span class="scoring-chip">Peor equipo: +5</span>
+              <span class="scoring-chip scoring-chip-gold">Campeon: +12 extra</span>
+            </div>
+          </section>
+
+          <section class="scoring-block">
+            <div class="scoring-block-head">
+              <h4>Ejemplo rapido</h4>
+              <span class="scoring-block-tag">Para que no quede duda</span>
+            </div>
+            <div class="scoring-rule-list">
+              <article class="scoring-rule-card">
+                <strong>Final</strong>
+                <p>Si aciertas a los dos finalistas, sumas <strong>+8 por cada equipo</strong>.</p>
+              </article>
+              <article class="scoring-rule-card">
+                <strong>Campeon</strong>
+                <p>Si ademas acertaste quien gana esa final, agregas <strong>+12 extra</strong>.</p>
+              </article>
+              <article class="scoring-rule-card">
+                <strong>Lectura del bracket</strong>
+                <p>Los bonos de eliminatoria solo se acreditan cuando la ronda real ya quedo resuelta.</p>
+              </article>
+            </div>
           </section>
 
           <section class="scoring-block">
@@ -2842,10 +2879,10 @@ function renderScoringModal() {
                 <strong>1. Se carga el resultado</strong>
                 <p>Cuando el admin registra un resultado oficial, ese partido queda listo para puntuar.</p>
               </div>
-                <div class="scoring-timeline-step">
-                  <strong>2. Se recalcula tu total</strong>
-                  <p>Se suman tus puntos directos del partido y los bonos de grupos, eliminatoria o peor equipo que ya correspondan.</p>
-                </div>
+              <div class="scoring-timeline-step">
+                <strong>2. Se recalcula tu total</strong>
+                <p>Se suman tus puntos directos del partido y los bonos de grupos, eliminatoria o peor equipo que ya correspondan.</p>
+              </div>
               <div class="scoring-timeline-step">
                 <strong>3. Se mueve la tabla general</strong>
                 <p>El leaderboard muestra el acumulado actualizado de todos los usuarios.</p>
@@ -2854,8 +2891,8 @@ function renderScoringModal() {
           </section>
 
           <section class="scoring-note">
-              <strong>Importante:</strong> los bonos de grupo solo cuentan cuando el grupo ya esta completo, los bonos del bracket dependen de la llave real y el bono de peor equipo solo cuenta cuando el admin fija el peor equipo oficial.
-            </section>
+            <strong>Importante:</strong> los bonos de grupo solo cuentan cuando el grupo ya esta completo. Los bonos de eliminatoria solo se suman cuando la ronda real ya quedo resuelta. El bono de peor equipo solo cuenta cuando el admin fija el peor equipo oficial.
+          </section>
         </div>
       </div>
     </div>
@@ -3834,6 +3871,8 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
       totalPlayers.textContent = String(leaderboard.length);
     }
 
+    updateLeaderboardRankBadge(currentUser ? currentUser.rank : null);
+
     list.innerHTML = leaderboard.map((row, index) => {
       const percent = Math.max((row.points / maxPoints) * 100, 6);
       return `
@@ -3865,6 +3904,7 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
       const node = document.getElementById(id);
       if (node) node.textContent = '--';
     });
+    updateLeaderboardRankBadge(null);
     emptyState.classList.remove('hidden');
     if (!silent) {
       toast(error.message || 'No se pudo cargar la tabla.', 'error');
