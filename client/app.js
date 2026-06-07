@@ -2450,6 +2450,7 @@ function setupSharedLayout() {
   const userLabel = document.getElementById('currentUser');
   if (userLabel) userLabel.textContent = state.user?.username || '';
   renderCurrentUserAvatar();
+  void refreshCurrentUserRankBadge({ silent: true });
   updateAdminResetVisibility();
   ensureProfileModal();
   ensureScoringModal();
@@ -2533,6 +2534,22 @@ function updateLeaderboardRankBadge(rank) {
 
   rankBadge.textContent = '#--';
   rankBadge.classList.add('hidden');
+}
+
+async function refreshCurrentUserRankBadge({ silent = true } = {}) {
+  const rankBadge = document.getElementById('leaderboardRankBadge');
+  if (!rankBadge || !state.user) return;
+
+  try {
+    const leaderboard = await apiFetch('/leaderboard');
+    const currentUser = leaderboard.find((row) => row.isCurrentUser) || null;
+    updateLeaderboardRankBadge(currentUser ? currentUser.rank : null);
+  } catch (error) {
+    updateLeaderboardRankBadge(null);
+    if (!silent) {
+      toast(error.message || 'No se pudo cargar tu puesto.', 'error');
+    }
+  }
 }
 
 function decorateLeaderboardAvatars(list, leaderboard) {
@@ -3263,6 +3280,7 @@ async function saveProfileSettings() {
   state.user = payload.user;
   localStorage.setItem('pm_user', JSON.stringify(payload.user));
   renderCurrentUserAvatar();
+  void refreshCurrentUserRankBadge({ silent: true });
   closeProfileModal();
   toast('Perfil actualizado.');
   if (document.getElementById('leaderboardList')) {
