@@ -1598,6 +1598,282 @@ input[type="number"]::-webkit-inner-spin-button {
   gap: 12px;
 }
 
+.payment-admin-modal-card {
+  width: min(1040px, calc(100vw - 32px));
+}
+
+.payment-admin-body {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-dashboard-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 16px;
+  padding: 18px 18px 18px 22px;
+  border: 0.5px solid rgba(74, 222, 128, 0.14);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(74, 222, 128, 0.12), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(250, 204, 21, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(22, 22, 28, 0.96), rgba(16, 20, 26, 0.94));
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.admin-dashboard-accent {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--accent-green), var(--accent-yellow));
+}
+
+.admin-dashboard-copy {
+  display: grid;
+  gap: 8px;
+  padding-left: 8px;
+}
+
+.admin-dashboard-copy h2 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+
+.admin-dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding-left: 8px;
+}
+
+.admin-stat-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-stat-card span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-stat-card strong {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.admin-stat-card-success {
+  border-color: rgba(74, 222, 128, 0.18);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.admin-stat-card-warning {
+  border-color: rgba(250, 204, 21, 0.18);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.admin-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-left: 8px;
+}
+
+.admin-users-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+}
+
+.admin-user-row.is-paid {
+  border-color: rgba(74, 222, 128, 0.22);
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.admin-user-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-user-name {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.admin-user-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.admin-user-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.admin-user-state-badge,
+.leaderboard-paid-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin-user-state-badge {
+  border: 0.5px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+}
+
+.admin-user-state-badge.is-paid,
+.leaderboard-paid-badge {
+  border-color: rgba(74, 222, 128, 0.24);
+  background: rgba(74, 222, 128, 0.12);
+  color: #bbf7d0;
+}
+
+.leaderboard-paid-badge {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.payment-admin-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.payment-admin-hero,
+.payment-admin-list-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(74, 222, 128, 0.08), transparent 32%),
+    rgba(255, 255, 255, 0.02);
+}
+
+.payment-admin-hero h4,
+.payment-admin-list-head h4 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.payment-admin-hero p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.payment-admin-mini-stats {
+  display: grid;
+  gap: 10px;
+}
+
+.payment-admin-mini-stats article {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.payment-admin-mini-stats article span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.payment-admin-mini-stats article strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.payment-admin-mini-stats article.is-paid {
+  border-color: rgba(74, 222, 128, 0.16);
+}
+
+.payment-admin-mini-stats article.is-pending {
+  border-color: rgba(250, 204, 21, 0.16);
+}
+
+.payment-admin-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.payment-admin-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 0.5px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.payment-admin-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.payment-admin-legend-dot.is-paid {
+  background: var(--accent-green);
+}
+
+.payment-admin-legend-dot.is-pending {
+  background: var(--accent-yellow);
+}
+
+.payment-admin-list-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .scoring-modal-card {
   border: 0.5px solid rgba(255, 255, 255, 0.08);
   background:
@@ -1841,6 +2117,10 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 @media (min-width: 900px) {
+  .payment-admin-modal-card {
+    width: min(1100px, calc(100vw - 56px));
+  }
+
   .scoring-modal-card {
     width: min(920px, calc(100vw - 56px));
     height: min(88vh, 900px);
@@ -2521,9 +2801,17 @@ input[type="number"]::-webkit-inner-spin-button {
 .leaderboard-spotlight-copy p {
   font-size: 18px;
   line-height: 1.05;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.leaderboard-name,
+.leaderboard-spotlight-copy p {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .leaderboard-spotlight-copy span,
@@ -2628,6 +2916,10 @@ input[type="number"]::-webkit-inner-spin-button {
 .leaderboard-name {
   margin-bottom: 4px;
   font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .leaderboard-user-head {
@@ -2853,6 +3145,48 @@ body.modal-open {
 }
 
 @media (max-width: 639px) {
+  .admin-dashboard-card {
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .admin-dashboard-copy h2 {
+    font-size: 22px;
+  }
+
+  .admin-dashboard-stats {
+    grid-template-columns: 1fr;
+    padding-left: 0;
+  }
+
+  .admin-actions-row {
+    padding-left: 0;
+  }
+
+  .payment-admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-admin-list-head {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .payment-admin-hero,
+  .payment-admin-list-panel {
+    padding: 14px;
+  }
+
+  .admin-user-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-user-state {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .leaderboard-mobile-nav {
     display: flex;
     margin: 0 0 8px;

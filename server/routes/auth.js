@@ -99,6 +99,7 @@ function publicUser(user) {
     username: user.username,
     email: user.email || '',
     isAdmin: user.isAdmin,
+    isPaid: Boolean(user.isPaid),
     avatarPreset: user.avatarPreset || '',
     avatarImage: user.avatarImage || '',
     predictedWorstTeam: user.predictedWorstTeam || '',

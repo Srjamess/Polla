@@ -35,6 +35,7 @@ const state = {
   profileDraftImage: '',
   activeAvatarSection: 'Futbol',
   adminSettings: null,
+  adminUsers: [],
   bracketResizeBound: false,
   bracketTab: 'real'
 };
@@ -1682,6 +1683,10 @@ function renderLeaderboardPredictionSummary() {
   });
 }
 
+function renderPaidBadge(isPaid) {
+  return isPaid ? '<span class="leaderboard-paid-badge" title="Pagó la apuesta" aria-label="Pagó la apuesta">💰</span>' : '';
+}
+
 function setLeaderboardHeroPanelExpanded(expanded) {
   const panel = document.getElementById('leaderboardHeroPanel');
   const summary = document.getElementById('leaderboardPredictionSummary');
@@ -2604,15 +2609,53 @@ function updateAdminResetVisibility() {
   updateAdminPredictionsLockVisibility();
 }
 
+function getPaymentAdminSummary() {
+  const users = state.adminUsers || [];
+  const paidCount = users.filter((user) => user.isPaid).length;
+  const unpaidCount = Math.max(users.length - paidCount, 0);
+
+  return {
+    total: users.length,
+    paidCount,
+    unpaidCount
+  };
+}
+
 function renderAdminPanel() {
   const adminPanel = document.getElementById('adminPanel');
   if (!adminPanel || !state.user?.isAdmin) return;
 
+  const summary = getPaymentAdminSummary();
+
   adminPanel.innerHTML = `
-    <h2>Administracion</h2>
-    <p class="admin-note">
-      El fixture oficial ya esta cargado. Usa los formularios dentro de cada tarjeta para guardar resultados reales y definir el clasificado en cruces empatados.
-    </p>
+    <div class="admin-dashboard-card">
+      <div class="admin-dashboard-accent"></div>
+      <div class="admin-dashboard-copy">
+        <p class="eyebrow">Panel de administracion</p>
+        <h2>Control de pagos</h2>
+        <p class="admin-note">
+          El fixture oficial ya esta cargado. Desde aqui solo marcas quien pago la apuesta; no se editan usuarios ni puntos.
+        </p>
+      </div>
+      <div class="admin-dashboard-stats" aria-label="Resumen de pagos">
+        <article class="admin-stat-card">
+          <span>Total</span>
+          <strong>${summary.total}</strong>
+        </article>
+        <article class="admin-stat-card admin-stat-card-success">
+          <span>Pagaron</span>
+          <strong>${summary.paidCount}</strong>
+        </article>
+        <article class="admin-stat-card admin-stat-card-warning">
+          <span>Pendientes</span>
+          <strong>${summary.unpaidCount}</strong>
+        </article>
+      </div>
+      <div class="admin-actions-row">
+        <button class="primary-button" type="button" data-open-payment-admin>Gestionar pagos</button>
+        <span class="admin-note">Solo cambia el estado de pago.</span>
+      </div>
+    </div>
   `;
 }
 
@@ -3168,6 +3211,91 @@ function renderProfileModal() {
   `;
 }
 
+function renderPaymentAdminModal() {
+  const users = state.adminUsers || [];
+  const summary = getPaymentAdminSummary();
+
+  return `
+    <div class="modal-shell hidden" id="paymentAdminModal" role="dialog" aria-modal="true" aria-labelledby="paymentAdminTitle">
+      <div class="modal-backdrop" data-close-payment-admin></div>
+      <div class="modal-card payment-admin-modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Panel de administracion</p>
+            <h3 id="paymentAdminTitle">Pagos de apuesta</h3>
+          </div>
+          <button class="modal-close" type="button" aria-label="Cerrar" data-close-payment-admin>&times;</button>
+        </div>
+        <div class="modal-body payment-admin-body">
+          <div class="payment-admin-layout">
+            <aside class="payment-admin-hero">
+              <p class="eyebrow">Resumen rapido</p>
+              <h4>Control simple de pagos</h4>
+              <p>
+                Marca solo si cada jugador ya pago. El sistema no cambia nombre, avatar, puntos ni rol.
+              </p>
+              <div class="payment-admin-mini-stats">
+                <article>
+                  <span>Usuarios</span>
+                  <strong data-payment-admin-total>${summary.total}</strong>
+                </article>
+                <article class="is-paid">
+                  <span>Pagados</span>
+                  <strong data-payment-admin-paid>${summary.paidCount}</strong>
+                </article>
+                <article class="is-pending">
+                  <span>Pendientes</span>
+                  <strong data-payment-admin-unpaid>${summary.unpaidCount}</strong>
+                </article>
+              </div>
+              <div class="payment-admin-legend">
+                <span class="payment-admin-legend-item">
+                  <span class="payment-admin-legend-dot is-paid"></span>
+                  Confirmado
+                </span>
+                <span class="payment-admin-legend-item">
+                  <span class="payment-admin-legend-dot is-pending"></span>
+                  Pendiente
+                </span>
+              </div>
+            </aside>
+
+            <section class="payment-admin-list-panel">
+              <div class="payment-admin-list-head">
+                <div>
+                  <p class="leaderboard-panel-kicker">Lista de usuarios</p>
+                  <h4>Marca el estado de pago</h4>
+                </div>
+                <button class="secondary-button" type="button" data-refresh-payment-admin>Recargar</button>
+              </div>
+              <div class="admin-users-list">
+                ${users.length ? users.map((user) => `
+                  <label class="admin-user-row ${user.isPaid ? 'is-paid' : ''}">
+                    <span class="admin-user-main">
+                      <span class="admin-user-name">${escapeHtml(user.username)}</span>
+                      <span class="admin-user-meta">${escapeHtml(user.email || 'Sin email')}</span>
+                    </span>
+                    <span class="admin-user-state">
+                      <span class="admin-user-state-badge ${user.isPaid ? 'is-paid' : ''}" aria-label="${user.isPaid ? 'Pagó' : 'Pendiente'}">${user.isPaid ? '💰' : 'Pendiente'}</span>
+                      <input
+                        type="checkbox"
+                        data-admin-paid-toggle
+                        data-user-id="${escapeHtml(String(user.id))}"
+                        ${user.isPaid ? 'checked' : ''}
+                        aria-label="Marcar pago de ${escapeHtml(user.username)}"
+                      />
+                    </span>
+                  </label>
+                `).join('') : '<p class="empty-state">No hay usuarios registrados.</p>'}
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderWorstTeamPredictionCard() {
   const teams = (state.worstTeamPrediction.teams && state.worstTeamPrediction.teams.length)
     ? state.worstTeamPrediction.teams
@@ -3335,6 +3463,112 @@ async function fetchAdminSettings({ silent = false } = {}) {
       toast(error.message || 'No se pudo cargar la configuracion de admin.', 'error');
     }
     throw error;
+  }
+}
+
+async function fetchAdminUsers({ silent = false } = {}) {
+  if (!state.user?.isAdmin) return [];
+
+  try {
+    const payload = await apiFetch('/admin/users');
+    state.adminUsers = payload.users || [];
+    return state.adminUsers;
+  } catch (error) {
+    if (!silent) {
+      toast(error.message || 'No se pudo cargar la lista de usuarios.', 'error');
+    }
+    throw error;
+  }
+}
+
+function ensurePaymentAdminModal() {
+  const existing = document.getElementById('paymentAdminModal');
+  if (existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', renderPaymentAdminModal());
+}
+
+function syncPaymentAdminModal() {
+  const modal = document.getElementById('paymentAdminModal');
+  if (!modal) return;
+  const list = modal.querySelector('.admin-users-list');
+  if (!list) return;
+  list.innerHTML = state.adminUsers.length
+    ? state.adminUsers.map((user) => `
+        <label class="admin-user-row ${user.isPaid ? 'is-paid' : ''}">
+          <span class="admin-user-main">
+            <span class="admin-user-name">${escapeHtml(user.username)}</span>
+            <span class="admin-user-meta">${escapeHtml(user.email || 'Sin email')}</span>
+          </span>
+          <span class="admin-user-state">
+            <span class="admin-user-state-badge ${user.isPaid ? 'is-paid' : ''}" aria-label="${user.isPaid ? 'Pagó' : 'Pendiente'}">${user.isPaid ? '💰' : 'Pendiente'}</span>
+            <input
+              type="checkbox"
+              data-admin-paid-toggle
+              data-user-id="${escapeHtml(String(user.id))}"
+              ${user.isPaid ? 'checked' : ''}
+              aria-label="Marcar pago de ${escapeHtml(user.username)}"
+            />
+          </span>
+        </label>
+      `).join('')
+    : '<p class="empty-state">No hay usuarios registrados.</p>';
+
+  const summary = getPaymentAdminSummary();
+  const totalNode = modal.querySelector('[data-payment-admin-total]');
+  const paidNode = modal.querySelector('[data-payment-admin-paid]');
+  const unpaidNode = modal.querySelector('[data-payment-admin-unpaid]');
+
+  if (totalNode) totalNode.textContent = String(summary.total);
+  if (paidNode) paidNode.textContent = String(summary.paidCount);
+  if (unpaidNode) unpaidNode.textContent = String(summary.unpaidCount);
+}
+
+async function openPaymentAdminModal() {
+  if (!state.user?.isAdmin) return;
+  ensurePaymentAdminModal();
+  try {
+    await fetchAdminUsers({ silent: true });
+  } catch {}
+  syncPaymentAdminModal();
+  const modal = document.getElementById('paymentAdminModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+}
+
+function closePaymentAdminModal() {
+  const modal = document.getElementById('paymentAdminModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+}
+
+async function updateUserPaymentStatus(userId, isPaid) {
+  if (!state.user?.isAdmin || !userId) return;
+
+  const payload = await apiFetch(`/admin/users/${encodeURIComponent(userId)}/payment`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isPaid })
+  });
+
+  state.adminUsers = state.adminUsers.map((user) => (
+    String(user.id) === String(payload.user.id)
+      ? { ...user, isPaid: Boolean(payload.user.isPaid) }
+      : user
+  ));
+  syncPaymentAdminModal();
+  renderAdminPanel();
+  await refreshLeaderboardIfVisible();
+  toast(payload.message || 'Estado de pago actualizado.');
+}
+
+async function refreshLeaderboardIfVisible() {
+  const list = document.getElementById('leaderboardList');
+  const emptyState = document.getElementById('emptyLeaderboard');
+  if (list && emptyState) {
+    await loadLeaderboard(list, emptyState, { silent: true });
   }
 }
 
@@ -3749,6 +3983,7 @@ async function initDashboardPage() {
   if (state.user?.isAdmin) {
     try {
       await fetchAdminSettings({ silent: true });
+      await fetchAdminUsers({ silent: true });
     } catch {}
   }
 
@@ -3819,7 +4054,7 @@ async function initDashboardPage() {
     updatePredictionDraftInput(input, { commit: false });
   });
 
-  document.addEventListener('click', (event) => {
+  document.addEventListener('click', async (event) => {
     const worstTeamToggle = event.target.closest('[data-toggle-worst-team]');
     if (worstTeamToggle) {
       if (state.worstTeamPrediction.locked || state.savingWorstTeamPrediction) return;
@@ -3856,14 +4091,35 @@ async function initDashboardPage() {
     section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
-  document.addEventListener('click', (event) => {
+  document.addEventListener('click', async (event) => {
     if (event.target.closest('[data-open-my-predictions]')) {
       openMyPredictionsModal();
       return;
     }
 
+    if (event.target.closest('[data-open-payment-admin]')) {
+      openPaymentAdminModal();
+      return;
+    }
+
+    if (event.target.closest('[data-refresh-payment-admin]')) {
+      try {
+        await fetchAdminUsers({ silent: true });
+        syncPaymentAdminModal();
+        toast('Lista actualizada.');
+      } catch (error) {
+        toast(error.message || 'No se pudo recargar la lista.', 'error');
+      }
+      return;
+    }
+
     if (event.target.closest('[data-close-my-predictions]')) {
       closeMyPredictionsModal();
+      return;
+    }
+
+    if (event.target.closest('[data-close-payment-admin]')) {
+      closePaymentAdminModal();
       return;
     }
 
@@ -3884,10 +4140,26 @@ async function initDashboardPage() {
     }
   });
 
+  document.addEventListener('change', async (event) => {
+    const paidToggle = event.target.closest('[data-admin-paid-toggle]');
+    if (!paidToggle) return;
+
+    try {
+      paidToggle.disabled = true;
+      await updateUserPaymentStatus(paidToggle.dataset.userId, paidToggle.checked);
+    } catch (error) {
+      paidToggle.checked = !paidToggle.checked;
+      toast(error.message || 'No se pudo actualizar el pago.', 'error');
+    } finally {
+      paidToggle.disabled = false;
+    }
+  });
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       closeScoringModal();
       closeMyPredictionsModal();
+      closePaymentAdminModal();
       closePredictionReviewSheet();
     }
   });
@@ -4055,7 +4327,7 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
             <div class="leaderboard-spotlight-head">
               ${getAvatarMarkup(row, 'leaderboard-avatar leaderboard-avatar-large')}
               <div class="leaderboard-spotlight-copy">
-                <p>${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}</p>
+                <p>${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}${renderPaidBadge(row.isPaid)}</p>
                 <span>${gap === 0 ? 'Marca el ritmo del torneo' : `${gap} pts del lider`}</span>
               </div>
               ${crown}
@@ -4090,7 +4362,7 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         <div class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}" style="animation-delay:${index * 45}ms">
           <div class="rank-number">${String(row.rank).padStart(2, '0')}</div>
           <div class="leaderboard-user">
-            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}</div>
+            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}${renderPaidBadge(row.isPaid)}</div>
             <div class="leaderboard-meta">
               <span>${row.rank <= 3 ? 'Zona de podio' : `${Math.max((leader?.points || row.points) - row.points, 0)} pts del lider`}</span>
               <span>#${row.rank}</span>

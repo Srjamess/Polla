@@ -35,6 +35,57 @@ router.get('/settings', async (req, res) => {
   }
 });
 
+router.get('/users', async (req, res) => {
+  try {
+    const users = await User.find()
+      .select('username email isAdmin isPaid avatarPreset avatarImage totalPoints createdAt')
+      .sort({ username: 1 });
+
+    res.json({
+      users: users.map((user) => ({
+        id: user._id,
+        username: user.username,
+        email: user.email || '',
+        isAdmin: Boolean(user.isAdmin),
+        isPaid: Boolean(user.isPaid),
+        avatarPreset: user.avatarPreset || '',
+        avatarImage: user.avatarImage || '',
+        totalPoints: Number(user.totalPoints || 0),
+        createdAt: user.createdAt
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'No se pudo cargar la lista de usuarios.' });
+  }
+});
+
+router.patch('/users/:id/payment', async (req, res) => {
+  try {
+    if (typeof req.body?.isPaid !== 'boolean') {
+      return res.status(400).json({ message: 'El estado de pago es obligatorio.' });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado.' });
+    }
+
+    user.isPaid = req.body.isPaid;
+    await user.save();
+
+    res.json({
+      message: user.isPaid ? 'Usuario marcado como pagador.' : 'Usuario marcado como no pagador.',
+      user: {
+        id: user._id,
+        username: user.username,
+        isPaid: Boolean(user.isPaid)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'No se pudo actualizar el estado de pago.' });
+  }
+});
+
 router.post('/worst-team', async (req, res) => {
   try {
     const matches = await Match.find().select('teamA teamB');

@@ -1,6 +1,6 @@
 # Polla Mundialista
 
-Aplicacion full-stack para hacer predicciones de partidos del Mundial. Incluye autenticacion con Firebase, usuarios, partidos, predicciones, calculo de puntos y leaderboard.
+Aplicacion full-stack para hacer predicciones de partidos del Mundial. Incluye autenticacion con Firebase, usuarios, partidos, predicciones, control de pagos, calculo de puntos y leaderboard.
 
 ## Stack
 
@@ -143,6 +143,21 @@ El script borra los partidos existentes e inserta un fixture demo con grupos A/B
 
 - `GET /api/leaderboard`
 
+### Admin
+
+- `GET /api/admin/settings`
+- `GET /api/admin/users`
+- `PATCH /api/admin/users/:id/payment`
+- `POST /api/admin/worst-team`
+- `POST /api/admin/predictions-lock`
+- `POST /api/admin/reset-pruebas`
+
+## Pagos
+
+- El modelo `User` incluye `isPaid` para marcar si un usuario ya pago la apuesta.
+- El leaderboard muestra una insignia visual cuando `isPaid` es verdadero.
+- El panel de administracion permite cambiar ese estado sin tocar puntos, predicciones ni el rol de admin.
+
 ## Deploy en Render.com
 
 1. Sube el proyecto a GitHub.
@@ -173,6 +188,6 @@ Render asigna `PORT` automaticamente, pero puedes dejarlo configurado si lo nece
 ## Notas
 
 - Firebase maneja la sesion del usuario y el backend verifica su `ID token`.
-- No hay sistema avanzado de roles.
+- La app usa `isAdmin` para el panel de administracion y `isPaid` para el control de pagos.
 - El frontend usa `localStorage` para guardar el perfil y refresca el token con Firebase.
 - Todos los endpoints no-auth estan protegidos con middleware de Firebase Auth.

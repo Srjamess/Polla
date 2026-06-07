@@ -9,7 +9,7 @@ router.use(authenticate);
 router.get('/', async (req, res) => {
   try {
     const users = await User.find()
-      .select('username totalPoints avatarPreset avatarImage')
+      .select('username totalPoints avatarPreset avatarImage isPaid')
       .sort({ totalPoints: -1, username: 1 });
 
     const leaderboard = users.map((user, index) => ({
@@ -18,6 +18,7 @@ router.get('/', async (req, res) => {
       username: user.username,
       avatarPreset: user.avatarPreset || '',
       avatarImage: user.avatarImage || '',
+      isPaid: Boolean(user.isPaid),
       points: user.totalPoints,
       isCurrentUser: user._id.toString() === req.user._id.toString()
     }));
