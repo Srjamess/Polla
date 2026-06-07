@@ -1768,9 +1768,10 @@ function getBracketTopPositions() {
   const quarterfinal = Array.from({ length: 2 }, (_, index) => (roundOf16[index * 2] + roundOf16[index * 2 + 1]) / 2);
   const semifinal = (quarterfinal[0] + quarterfinal[1]) / 2;
   const final = semifinal;
-  const champion = final + 66;
+  const champion = final - 110;
+  const thirdPlace = final + 66;
 
-  return { roundOf32, roundOf16, quarterfinal, semifinal, final, champion };
+  return { roundOf32, roundOf16, quarterfinal, semifinal, final, thirdPlace, champion };
 }
 
 function renderBracketTeamLine(teamName, score, isWinner, mode = 'real') {
@@ -1830,10 +1831,13 @@ function renderBracketCanvasLabels(mode = 'real') {
   `).join('');
 }
 
-function renderConvergentBracket(leftRoundOf32, leftRoundOf16, leftQuarterfinals, leftSemifinals, finalMatch, rightSemifinals, rightQuarterfinals, rightRoundOf16, rightRoundOf32, groupTables, groupStatus, matchesByCode, mode = 'real') {
+function renderConvergentBracket(leftRoundOf32, leftRoundOf16, leftQuarterfinals, leftSemifinals, finalMatch, thirdPlaceMatch, rightSemifinals, rightQuarterfinals, rightRoundOf16, rightRoundOf32, groupTables, groupStatus, matchesByCode, mode = 'real') {
   const tops = getBracketTopPositions();
   const totalW = BRACKET_LAYOUT.PAD_X * 2 + (9 * BRACKET_LAYOUT.MW) + (8 * BRACKET_LAYOUT.COL_GAP);
-  const totalH = tops.champion + BRACKET_LAYOUT.CHAMP_H + BRACKET_LAYOUT.PAD_BOTTOM;
+  const totalH = Math.max(
+    tops.thirdPlace + BRACKET_LAYOUT.MH,
+    tops.champion + BRACKET_LAYOUT.CHAMP_H
+  ) + BRACKET_LAYOUT.PAD_BOTTOM;
   const leftXs = [0, 1, 2, 3].map(getBracketColumnX);
   const rightXs = [5, 6, 7, 8].map(getBracketColumnX);
   const centerX = getBracketColumnX(4);
@@ -1855,8 +1859,9 @@ function renderConvergentBracket(leftRoundOf32, leftRoundOf16, leftQuarterfinals
           ${leftRoundOf16.map((match, index) => renderCard(match, leftXs[1], tops.roundOf16[index], 'roundOf16-left')).join('')}
           ${leftQuarterfinals.map((match, index) => renderCard(match, leftXs[2], tops.quarterfinal[index], 'quarterfinal-left')).join('')}
           ${leftSemifinals.map((match) => renderCard(match, leftXs[3], tops.semifinal, 'semifinal-left')).join('')}
-          ${finalMatch ? renderCard(finalMatch, centerX, tops.final, 'final') : ''}
           ${finalMatch ? `<div class="bracket-slot bracket-slot-champion" data-bracket-stage="champion" style="left:${centerX}px; top:${tops.champion}px;">${renderBracketChampionCard(finalMatch, mode)}</div>` : ''}
+          ${finalMatch ? renderCard(finalMatch, centerX, tops.final, 'final') : ''}
+          ${thirdPlaceMatch ? renderCard(thirdPlaceMatch, centerX, tops.thirdPlace, 'thirdPlace') : ''}
           ${rightSemifinals.map((match) => renderCard(match, rightXs[0], tops.semifinal, 'semifinal-right')).join('')}
           ${rightQuarterfinals.map((match, index) => renderCard(match, rightXs[1], tops.quarterfinal[index], 'quarterfinal-right')).join('')}
           ${rightRoundOf16.map((match, index) => renderCard(match, rightXs[2], tops.roundOf16[index], 'roundOf16-right')).join('')}
@@ -1919,6 +1924,7 @@ function drawBracketLines() {
   const right16 = getSlots('[data-bracket-stage="roundOf16-right"]');
   const right32 = getSlots('[data-bracket-stage="roundOf32-right"]');
   const finalCard = stage.querySelector('[data-bracket-stage="final"] .bk-match');
+  const thirdPlaceCard = stage.querySelector('[data-bracket-stage="thirdPlace"] .bk-match');
   const championCard = stage.querySelector('[data-bracket-role="champion"]');
 
   const connectPairs = (source, target, direction, strokeStyle) => {
@@ -1975,6 +1981,36 @@ function drawBracketLines() {
     );
   }
 
+  if (thirdPlaceCard && leftSF[0] && rightSF[0]) {
+    const thirdRect = thirdPlaceCard.getBoundingClientRect();
+    const thirdBox = {
+      left: Math.round(thirdRect.left - stageRect.left),
+      top: Math.round(thirdRect.top - stageRect.top),
+      width: Math.round(thirdRect.width || BRACKET_LAYOUT.MW),
+      height: Math.round(thirdRect.height || BRACKET_LAYOUT.MH)
+    };
+    const leftSemi = leftSF[0];
+    const rightSemi = rightSF[0];
+    const thirdY = thirdBox.top + thirdBox.height / 2;
+
+    drawBracketConnector(
+      ctx,
+      leftSemi.left + leftSemi.width,
+      leftSemi.top + leftSemi.height / 2,
+      thirdBox.left,
+      thirdY,
+      'rgba(255,255,255,0.16)'
+    );
+    drawBracketConnector(
+      ctx,
+      rightSemi.left,
+      rightSemi.top + rightSemi.height / 2,
+      thirdBox.left + thirdBox.width,
+      thirdY,
+      'rgba(255,255,255,0.16)'
+    );
+  }
+
   if (finalCard && championCard) {
     const finalRect = finalCard.getBoundingClientRect();
     const champRect = championCard.getBoundingClientRect();
@@ -1984,12 +2020,12 @@ function drawBracketLines() {
       width: Math.round(finalRect.width || BRACKET_LAYOUT.MW),
       height: Math.round(finalRect.height || BRACKET_LAYOUT.MH)
     };
-    const champTop = Math.round(champRect.top - stageRect.top);
+    const champBottom = Math.round(champRect.top - stageRect.top + champRect.height);
 
     ctx.strokeStyle = 'rgba(250,204,21,0.35)';
     ctx.beginPath();
-    ctx.moveTo(finalBox.left + finalBox.width / 2, finalBox.top + finalBox.height);
-    ctx.lineTo(finalBox.left + finalBox.width / 2, champTop);
+    ctx.moveTo(finalBox.left + finalBox.width / 2, champBottom);
+    ctx.lineTo(finalBox.left + finalBox.width / 2, finalBox.top);
     ctx.stroke();
   }
 }
@@ -2396,6 +2432,7 @@ function renderFixture(matches, myPredictions = []) {
   ]);
 
   const finalMatch = orderByCode(finals, ['F-1'])[0] || null;
+  const thirdPlaceMatch = orderByCode(thirdPlace, ['TP-1'])[0] || null;
   const bracketSubtitle = state.bracketTab === 'real'
     ? 'Resultados oficiales del torneo'
     : 'Como avanzaria el torneo segun tus predicciones';
@@ -2417,6 +2454,7 @@ function renderFixture(matches, myPredictions = []) {
           leftQuarterfinals,
           orderByCode(semifinals, ['SF-1']),
           finalMatch,
+          thirdPlaceMatch,
           orderByCode(semifinals, ['SF-2']),
           rightQuarterfinals,
           rightRoundOf16,
@@ -2435,6 +2473,7 @@ function renderFixture(matches, myPredictions = []) {
           leftQuarterfinals,
           orderByCode(semifinals, ['SF-1']),
           finalMatch,
+          thirdPlaceMatch,
           orderByCode(semifinals, ['SF-2']),
           rightQuarterfinals,
           rightRoundOf16,
