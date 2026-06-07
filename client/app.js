@@ -2874,8 +2874,9 @@ function renderProfileModal() {
           <section class="profile-section">
             <h4>Foto de perfil</h4>
             <label class="profile-upload">
-              <span>Seleccionar imagen</span>
-              <input id="profileImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+              <span class="profile-upload-label">Seleccionar imagen</span>
+              <span class="profile-upload-hint">JPG, PNG, WEBP o GIF desde tu galeria</span>
+              <input id="profileImageInput" class="profile-upload-input" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif" />
             </label>
             <div class="profile-actions">
               <button class="secondary-button" type="button" data-remove-profile-photo ${state.profileDraftImage || state.user?.avatarImage ? '' : 'disabled'}>Quitar foto</button>
