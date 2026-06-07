@@ -19,8 +19,15 @@ function publicUser(user) {
     id: user._id,
     username: user.username,
     isAdmin: user.isAdmin,
+    avatarPreset: user.avatarPreset || '',
+    avatarImage: user.avatarImage || '',
     totalPoints: user.totalPoints
   };
+}
+
+function isValidDataImage(value) {
+  if (!value) return true;
+  return /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(String(value));
 }
 
 router.post('/register', async (req, res) => {
@@ -81,6 +88,39 @@ router.post('/login', async (req, res) => {
 
 router.get('/me', authenticate, (req, res) => {
   res.json({ user: publicUser(req.user) });
+});
+
+router.patch('/me', authenticate, async (req, res) => {
+  try {
+    const { avatarPreset, avatarImage } = req.body;
+
+    if (avatarPreset != null && typeof avatarPreset !== 'string') {
+      return res.status(400).json({ message: 'Invalid avatar preset.' });
+    }
+
+    if (avatarImage != null && typeof avatarImage !== 'string') {
+      return res.status(400).json({ message: 'Invalid avatar image.' });
+    }
+
+    const nextPreset = String(avatarPreset || '').trim();
+    const nextImage = String(avatarImage || '').trim();
+
+    if (!isValidDataImage(nextImage)) {
+      return res.status(400).json({ message: 'Avatar image must be a valid image file.' });
+    }
+
+    if (nextImage.length > 1_500_000) {
+      return res.status(400).json({ message: 'Avatar image is too large.' });
+    }
+
+    req.user.avatarPreset = nextPreset;
+    req.user.avatarImage = nextImage;
+    await req.user.save();
+
+    res.json({ user: publicUser(req.user) });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not update profile.' });
+  }
 });
 
 module.exports = router;

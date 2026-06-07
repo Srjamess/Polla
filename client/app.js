@@ -16,8 +16,31 @@ const state = {
   predictionDrafts: {},
   pendingPredictionStage: null,
   savingPredictionStage: null,
-  invalidPredictionMatchIds: []
+  invalidPredictionMatchIds: [],
+  profileDraftImage: '',
+  activeAvatarSection: 'Futbol',
+  bracketResizeBound: false,
+  bracketTab: 'real'
 };
+
+const AVATAR_PRESET_SECTIONS = [
+  {
+    title: 'Futbol',
+    items: ['⚽', '🥅', '🏆', '🎯', '🧤', '👟', '📣', '🔥']
+  },
+  {
+    title: 'Animales',
+    items: ['🦁', '🐯', '🦅', '🐼', '🐺', '🦈', '🐆', '🐂']
+  },
+  {
+    title: 'Energia',
+    items: ['⭐', '🌙', '☀️', '⚡', '🌪️', '🌊', '❄️', '🌋']
+  },
+  {
+    title: 'Estilo',
+    items: ['😎', '🤖', '👑', '🎧', '🎮', '🚀', '🎨', '💎']
+  }
+];
 
 const teamFlags = {
   Alemania: 'de',
@@ -293,6 +316,7 @@ function clearSession() {
   localStorage.removeItem('pm_user');
   state.token = null;
   state.user = null;
+  state.profileDraftImage = '';
 }
 
 function toast(message, type = 'success') {
@@ -324,6 +348,7 @@ async function apiFetch(path, options = {}) {
 function setSession(payload) {
   state.token = payload.token;
   state.user = payload.user;
+  state.profileDraftImage = payload.user?.avatarImage || '';
   localStorage.setItem('pm_token', payload.token);
   localStorage.setItem('pm_user', JSON.stringify(payload.user));
 }
@@ -400,7 +425,7 @@ function reliableFlagEmoji(teamName) {
 
 function renderFlag(teamName) {
   const code = flagCode(teamName);
-  if (code && code.length === 2) {
+  if (code) {
     return `
       <span class="flag-mark" aria-hidden="true">
         <img
@@ -799,17 +824,17 @@ function fixtureStageLabel(stage) {
   }[stage] || stageLabel(stage);
 }
 
-function stageNavLabel(stage) {
-  return {
-    group: 'Grupos',
-    roundOf32: '16avos',
-    roundOf16: '8avos',
-    quarterfinal: 'Cuartos',
-    semifinal: 'Semi',
-    thirdPlace: '3ro',
-    final: 'Fin'
-  }[stage] || stageLabel(stage);
-}
+  function stageNavLabel(stage) {
+    return {
+      group: 'Fase de grupos',
+      roundOf32: 'Dieciseisavos de final',
+      roundOf16: 'Octavos de final',
+      quarterfinal: 'Cuartos de final',
+      semifinal: 'Semifinales',
+      thirdPlace: 'Tercer puesto',
+      final: 'Final'
+    }[stage] || stageLabel(stage);
+  }
 
 function prettySourceLabel(source) {
   const text = String(source || '');
@@ -1528,6 +1553,312 @@ function formatBracketTime(value) {
   });
 }
 
+const BRACKET_LAYOUT = {
+  MW: 108,
+  MH: 50,
+  COL_GAP: 36,
+  R16_GAP: 8,
+  LABEL_H: 30,
+  PAD_X: 16,
+  PAD_TOP: 14,
+  PAD_BOTTOM: 22,
+  CHAMP_H: 80
+};
+
+function getBracketColumnX(columnIndex) {
+  return BRACKET_LAYOUT.PAD_X + columnIndex * (BRACKET_LAYOUT.MW + BRACKET_LAYOUT.COL_GAP);
+}
+
+function getBracketDisplayTeam(match, side, mode = 'real') {
+  const rawTeam = mode === 'predicted'
+    ? (side === 'A' ? (match.predictedResolvedTeamA || match.clientPredictedResolvedTeamA || '') : (match.predictedResolvedTeamB || match.clientPredictedResolvedTeamB || ''))
+    : (side === 'A' ? (match.actualResolvedTeamA || match.teamA || '') : (match.actualResolvedTeamB || match.teamB || ''));
+  const team = String(rawTeam || '').trim();
+  return team && team !== 'Por definir' ? team : '';
+}
+
+function getBracketPredictionScore(match, side) {
+  const prediction = match?.prediction || {};
+  const value = side === 'A' ? prediction.predictedScoreA : prediction.predictedScoreB;
+  return value === null || value === undefined || value === '' ? null : value;
+}
+
+function getBracketWinnerSide(match, mode = 'real') {
+  if (mode === 'predicted') {
+    const scoreA = getBracketPredictionScore(match, 'A');
+    const scoreB = getBracketPredictionScore(match, 'B');
+    if (scoreA === null || scoreB === null) return '';
+    if (Number(scoreA) > Number(scoreB)) return 'A';
+    if (Number(scoreB) > Number(scoreA)) return 'B';
+    return '';
+  }
+
+  if (!match?.resultSet) return '';
+  if (Number(match.scoreA) > Number(match.scoreB)) return 'A';
+  if (Number(match.scoreB) > Number(match.scoreA)) return 'B';
+  return '';
+}
+
+function getBracketTopPositions() {
+  const rowGap = BRACKET_LAYOUT.MH + BRACKET_LAYOUT.R16_GAP;
+  const roundOf32 = Array.from({ length: 8 }, (_, index) => BRACKET_LAYOUT.LABEL_H + index * rowGap);
+  const roundOf16 = Array.from({ length: 4 }, (_, index) => (roundOf32[index * 2] + roundOf32[index * 2 + 1]) / 2);
+  const quarterfinal = Array.from({ length: 2 }, (_, index) => (roundOf16[index * 2] + roundOf16[index * 2 + 1]) / 2);
+  const semifinal = (quarterfinal[0] + quarterfinal[1]) / 2;
+  const final = semifinal;
+  const champion = final + 66;
+
+  return { roundOf32, roundOf16, quarterfinal, semifinal, final, champion };
+}
+
+function renderBracketTeamLine(teamName, score, isWinner, mode = 'real') {
+  const label = teamName || (mode === 'predicted' ? '🏳️ Por definir' : 'Por definir');
+  const flag = teamName ? renderFlag(teamName) : '<span class="bk-flag-empty"></span>';
+
+  return `
+    <div class="bk-team ${isWinner ? 'winner' : ''}">
+      <span class="flag">${flag}</span>
+      <span class="name">${escapeHtml(label)}</span>
+      <span class="score">${score ?? ''}</span>
+    </div>
+  `;
+}
+
+function renderBracketMatchCard(match, groupTables, groupStatus, matchesByCode, mode = 'real') {
+  const teamA = getBracketDisplayTeam(match, 'A', mode);
+  const teamB = getBracketDisplayTeam(match, 'B', mode);
+  const winnerSide = getBracketWinnerSide(match, mode);
+  const scoreA = mode === 'predicted'
+    ? getBracketPredictionScore(match, 'A')
+    : (match.resultSet ? Number(match.scoreA) : null);
+  const scoreB = mode === 'predicted'
+    ? getBracketPredictionScore(match, 'B')
+    : (match.resultSet ? Number(match.scoreB) : null);
+
+  return `
+    <article class="bk-match" data-bracket-code="${escapeHtml(match.code || match._id)}">
+      ${renderBracketTeamLine(teamA, scoreA ?? '–', winnerSide === 'A', mode)}
+      ${renderBracketTeamLine(teamB, scoreB ?? '–', winnerSide === 'B', mode)}
+    </article>
+  `;
+}
+
+function renderBracketChampionCard(finalMatch, mode = 'real') {
+  const winnerSide = getBracketWinnerSide(finalMatch, mode);
+  const winnerTeam = winnerSide === 'A'
+    ? getBracketDisplayTeam(finalMatch, 'A', mode)
+    : winnerSide === 'B'
+      ? getBracketDisplayTeam(finalMatch, 'B', mode)
+      : '';
+
+  return `
+    <article class="bk-champ" data-bracket-role="champion">
+      <div class="bk-champ-trophy">🏆</div>
+      <div class="bk-champ-label">Campeón</div>
+      <div class="bk-champ-team">${escapeHtml(winnerTeam || 'Por definir')}</div>
+    </article>
+  `;
+}
+
+function renderBracketCanvasLabels(mode = 'real') {
+  const labels = ['16avos', 'Octavos', 'Cuartos', 'Semis', 'Final', 'Semis', 'Cuartos', 'Octavos', '16avos'];
+
+  return labels.map((label, index) => `
+    <span class="bracket-column-label ${mode === 'predicted' ? 'bracket-column-label-predicted' : ''}" style="left:${getBracketColumnX(index)}px">${escapeHtml(label)}</span>
+  `).join('');
+}
+
+function renderConvergentBracket(leftRoundOf32, leftRoundOf16, leftQuarterfinals, leftSemifinals, finalMatch, rightSemifinals, rightQuarterfinals, rightRoundOf16, rightRoundOf32, groupTables, groupStatus, matchesByCode, mode = 'real') {
+  const tops = getBracketTopPositions();
+  const totalW = BRACKET_LAYOUT.PAD_X * 2 + (9 * BRACKET_LAYOUT.MW) + (8 * BRACKET_LAYOUT.COL_GAP);
+  const totalH = tops.champion + BRACKET_LAYOUT.CHAMP_H + BRACKET_LAYOUT.PAD_BOTTOM;
+  const leftXs = [0, 1, 2, 3].map(getBracketColumnX);
+  const rightXs = [5, 6, 7, 8].map(getBracketColumnX);
+  const centerX = getBracketColumnX(4);
+
+  const renderCard = (match, x, y, stage) => `
+    <div class="bracket-slot" data-bracket-stage="${stage}" style="left:${x}px; top:${y}px;">
+      ${renderBracketMatchCard(match, groupTables, groupStatus, matchesByCode, mode)}
+    </div>
+  `;
+
+  return `
+    <div class="bracket-scroll">
+      <div class="bracket-wrapper">
+        <div class="bracket-hint">? ? Desliza para ver todo el bracket</div>
+        <div class="bracket-stage" style="width:${totalW}px; height:${totalH}px;">
+          <canvas class="bracket-line-canvas" aria-hidden="true"></canvas>
+          ${renderBracketCanvasLabels(mode)}
+          ${leftRoundOf32.map((match, index) => renderCard(match, leftXs[0], tops.roundOf32[index], 'roundOf32-left')).join('')}
+          ${leftRoundOf16.map((match, index) => renderCard(match, leftXs[1], tops.roundOf16[index], 'roundOf16-left')).join('')}
+          ${leftQuarterfinals.map((match, index) => renderCard(match, leftXs[2], tops.quarterfinal[index], 'quarterfinal-left')).join('')}
+          ${leftSemifinals.map((match) => renderCard(match, leftXs[3], tops.semifinal, 'semifinal-left')).join('')}
+          ${finalMatch ? renderCard(finalMatch, centerX, tops.final, 'final') : ''}
+          ${finalMatch ? `<div class="bracket-slot bracket-slot-champion" data-bracket-stage="champion" style="left:${centerX}px; top:${tops.champion}px;">${renderBracketChampionCard(finalMatch, mode)}</div>` : ''}
+          ${rightSemifinals.map((match) => renderCard(match, rightXs[0], tops.semifinal, 'semifinal-right')).join('')}
+          ${rightQuarterfinals.map((match, index) => renderCard(match, rightXs[1], tops.quarterfinal[index], 'quarterfinal-right')).join('')}
+          ${rightRoundOf16.map((match, index) => renderCard(match, rightXs[2], tops.roundOf16[index], 'roundOf16-right')).join('')}
+          ${rightRoundOf32.map((match, index) => renderCard(match, rightXs[3], tops.roundOf32[index], 'roundOf32-right')).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+function drawBracketConnector(ctx, fromX, fromY, toX, toY, strokeStyle) {
+  const midX = (fromX + toX) / 2;
+  ctx.strokeStyle = strokeStyle;
+  ctx.beginPath();
+  ctx.moveTo(fromX, fromY);
+  ctx.lineTo(midX, fromY);
+  ctx.lineTo(midX, toY);
+  ctx.lineTo(toX, toY);
+  ctx.stroke();
+}
+
+function drawBracketLines() {
+  const stage = [...document.querySelectorAll('.bracket-stage')].find((node) => node.offsetParent !== null);
+  const canvas = stage?.querySelector('.bracket-line-canvas');
+  if (!stage || !canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(stage.scrollWidth, stage.clientWidth);
+  const height = Math.max(stage.scrollHeight, stage.clientHeight);
+  const stageRect = stage.getBoundingClientRect();
+
+  canvas.width = Math.ceil(width * dpr);
+  canvas.height = Math.ceil(height * dpr);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineWidth = 0.75;
+
+  const getSlots = (selector) => [...stage.querySelectorAll(selector)].map((slot) => {
+    const card = slot.querySelector('.bk-match');
+    if (!card) return null;
+    const rect = card.getBoundingClientRect();
+    return {
+      left: Math.round(rect.left - stageRect.left),
+      top: Math.round(rect.top - stageRect.top),
+      width: Math.round(rect.width || BRACKET_LAYOUT.MW),
+      height: Math.round(rect.height || BRACKET_LAYOUT.MH)
+    };
+  }).filter(Boolean);
+
+  const left32 = getSlots('[data-bracket-stage="roundOf32-left"]');
+  const left16 = getSlots('[data-bracket-stage="roundOf16-left"]');
+  const leftQF = getSlots('[data-bracket-stage="quarterfinal-left"]');
+  const leftSF = getSlots('[data-bracket-stage="semifinal-left"]');
+  const rightSF = getSlots('[data-bracket-stage="semifinal-right"]');
+  const rightQF = getSlots('[data-bracket-stage="quarterfinal-right"]');
+  const right16 = getSlots('[data-bracket-stage="roundOf16-right"]');
+  const right32 = getSlots('[data-bracket-stage="roundOf32-right"]');
+  const finalCard = stage.querySelector('[data-bracket-stage="final"] .bk-match');
+  const championCard = stage.querySelector('[data-bracket-role="champion"]');
+
+  const connectPairs = (source, target, direction, strokeStyle) => {
+    for (let index = 0; index < source.length; index += 2) {
+      const upper = source[index];
+      const lower = source[index + 1];
+      const next = target[Math.floor(index / 2)];
+      if (!upper || !lower || !next) continue;
+
+      const fromXUpper = direction === 'left' ? upper.left + upper.width : upper.left;
+      const fromXLower = direction === 'left' ? lower.left + lower.width : lower.left;
+      const toX = direction === 'left' ? next.left : next.left + next.width;
+      const targetY = next.top + next.height / 2;
+
+      drawBracketConnector(ctx, fromXUpper, upper.top + upper.height / 2, toX, targetY, strokeStyle);
+      drawBracketConnector(ctx, fromXLower, lower.top + lower.height / 2, toX, targetY, strokeStyle);
+    }
+  };
+
+  connectPairs(left32, left16, 'left', 'rgba(255,255,255,0.1)');
+  connectPairs(left16, leftQF, 'left', 'rgba(255,255,255,0.1)');
+  connectPairs(leftQF, leftSF, 'left', 'rgba(255,255,255,0.1)');
+  connectPairs(right32, right16, 'right', 'rgba(255,255,255,0.1)');
+  connectPairs(right16, rightQF, 'right', 'rgba(255,255,255,0.1)');
+  connectPairs(rightQF, rightSF, 'right', 'rgba(255,255,255,0.1)');
+
+  if (finalCard && leftSF[0] && rightSF[0]) {
+    const finalRect = finalCard.getBoundingClientRect();
+    const finalBox = {
+      left: Math.round(finalRect.left - stageRect.left),
+      top: Math.round(finalRect.top - stageRect.top),
+      width: Math.round(finalRect.width || BRACKET_LAYOUT.MW),
+      height: Math.round(finalRect.height || BRACKET_LAYOUT.MH)
+    };
+    const leftSemi = leftSF[0];
+    const rightSemi = rightSF[0];
+    const finalY = finalBox.top + finalBox.height / 2;
+
+    drawBracketConnector(
+      ctx,
+      leftSemi.left + leftSemi.width,
+      leftSemi.top + leftSemi.height / 2,
+      finalBox.left,
+      finalY,
+      'rgba(250,204,21,0.25)'
+    );
+    drawBracketConnector(
+      ctx,
+      rightSemi.left,
+      rightSemi.top + rightSemi.height / 2,
+      finalBox.left + finalBox.width,
+      finalY,
+      'rgba(250,204,21,0.25)'
+    );
+  }
+
+  if (finalCard && championCard) {
+    const finalRect = finalCard.getBoundingClientRect();
+    const champRect = championCard.getBoundingClientRect();
+    const finalBox = {
+      left: Math.round(finalRect.left - stageRect.left),
+      top: Math.round(finalRect.top - stageRect.top),
+      width: Math.round(finalRect.width || BRACKET_LAYOUT.MW),
+      height: Math.round(finalRect.height || BRACKET_LAYOUT.MH)
+    };
+    const champTop = Math.round(champRect.top - stageRect.top);
+
+    ctx.strokeStyle = 'rgba(250,204,21,0.35)';
+    ctx.beginPath();
+    ctx.moveTo(finalBox.left + finalBox.width / 2, finalBox.top + finalBox.height);
+    ctx.lineTo(finalBox.left + finalBox.width / 2, champTop);
+    ctx.stroke();
+  }
+}
+
+function scheduleBracketLinesDraw() {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(drawBracketLines);
+  });
+}
+
+function updateBracketView() {
+  const real = document.getElementById('bracket-real');
+  const predicted = document.getElementById('bracket-predicciones');
+  const subtitle = document.getElementById('bracketViewSubtitle');
+  const tabs = document.querySelectorAll('[data-bracket-tab]');
+
+  if (real) real.style.display = state.bracketTab === 'real' ? 'block' : 'none';
+  if (predicted) predicted.style.display = state.bracketTab === 'predicted' ? 'block' : 'none';
+  if (subtitle) {
+    subtitle.textContent = state.bracketTab === 'real'
+      ? 'Resultados oficiales del torneo'
+      : 'Como avanzaria el torneo segun tus predicciones';
+  }
+
+  tabs.forEach((tab) => {
+    tab.classList.toggle('is-active', tab.dataset.bracketTab === state.bracketTab);
+  });
+
+  scheduleBracketLinesDraw();
+}
+
 function bracketStageType(stage) {
   if (stage.startsWith('roundOf32')) return 'roundOf32';
   if (stage.startsWith('roundOf16')) return 'roundOf16';
@@ -1899,39 +2230,60 @@ function renderFixture(matches, myPredictions = []) {
     'QF-4'
   ]);
 
-  const centerMatches = [
-    ...orderByCode(finals, ['F-1']),
-    ...orderByCode(thirdPlace, ['TP-1'])
-  ];
+  const finalMatch = orderByCode(finals, ['F-1'])[0] || null;
+  const bracketSubtitle = state.bracketTab === 'real'
+    ? 'Resultados oficiales del torneo'
+    : 'Como avanzaria el torneo segun tus predicciones';
 
   knockoutBoard.innerHTML = `
     <section class="screen-section bracket-panel">
-      <div class="bracket-canvas">
-        <div class="bracket-title-row">
-          <span>Dieciseisavos de final</span>
-          <span>Octavos de final</span>
-          <span>Cuartos de final</span>
-          <span class="bracket-center-title">Semifinal · Final · Semifinal</span>
-          <span>Cuartos de final</span>
-          <span>Octavos de final</span>
-          <span>Dieciseisavos de final</span>
+      <div class="bracket-view-header">
+        <div class="bracket-view-tabs" role="tablist" aria-label="Vistas de eliminatoria">
+          <button class="bracket-view-tab ${state.bracketTab === 'real' ? 'is-active' : ''}" type="button" data-bracket-tab="real" role="tab" aria-selected="${state.bracketTab === 'real' ? 'true' : 'false'}">Clasificacion real</button>
+          <button class="bracket-view-tab ${state.bracketTab === 'predicted' ? 'is-active' : ''}" type="button" data-bracket-tab="predicted" role="tab" aria-selected="${state.bracketTab === 'predicted' ? 'true' : 'false'}">Mis predicciones</button>
         </div>
+        <p class="bracket-view-subtitle" id="bracketViewSubtitle">${escapeHtml(bracketSubtitle)}</p>
+      </div>
 
-        <div class="bracket-tree">
-          ${renderBracketLines()}
+      <div id="bracket-real" data-bracket-view="real" style="display: ${state.bracketTab === 'real' ? 'block' : 'none'};">
+        ${renderConvergentBracket(
+          leftRoundOf32,
+          leftRoundOf16,
+          leftQuarterfinals,
+          orderByCode(semifinals, ['SF-1']),
+          finalMatch,
+          orderByCode(semifinals, ['SF-2']),
+          rightQuarterfinals,
+          rightRoundOf16,
+          rightRoundOf32,
+          groupTables,
+          groupStatus,
+          matchesByCode,
+          'real'
+        )}
+      </div>
 
-          ${renderBracketColumn('Dieciseisavos', 'roundOf32-left', leftRoundOf32, groupTables, groupStatus, matchesByCode)}
-          ${renderBracketColumn('Octavos', 'roundOf16-left', leftRoundOf16, groupTables, groupStatus, matchesByCode)}
-          ${renderBracketColumn('Cuartos', 'quarterfinal-left', leftQuarterfinals, groupTables, groupStatus, matchesByCode)}
-          ${renderBracketCenterColumn(semifinals, centerMatches, groupTables, groupStatus, matchesByCode)}
-          ${renderBracketColumn('Cuartos', 'quarterfinal-right', rightQuarterfinals, groupTables, groupStatus, matchesByCode)}
-          ${renderBracketColumn('Octavos', 'roundOf16-right', rightRoundOf16, groupTables, groupStatus, matchesByCode)}
-          ${renderBracketColumn('Dieciseisavos', 'roundOf32-right', rightRoundOf32, groupTables, groupStatus, matchesByCode)}
-        </div>
+      <div id="bracket-predicciones" data-bracket-view="predicted" style="display: ${state.bracketTab === 'predicted' ? 'block' : 'none'};">
+        ${renderConvergentBracket(
+          leftRoundOf32,
+          leftRoundOf16,
+          leftQuarterfinals,
+          orderByCode(semifinals, ['SF-1']),
+          finalMatch,
+          orderByCode(semifinals, ['SF-2']),
+          rightQuarterfinals,
+          rightRoundOf16,
+          rightRoundOf32,
+          groupTables,
+          groupStatus,
+          matchesByCode,
+          'predicted'
+        )}
       </div>
     </section>
   `;
 
+  updateBracketView();
   groupsBoard.classList.toggle('hidden',      state.activeView !== 'standings');
   matchesBoard.classList.toggle('hidden',     state.activeView !== 'matches');
   predictionsBoard.classList.toggle('hidden', state.activeView !== 'predictions');
@@ -1940,10 +2292,10 @@ function renderFixture(matches, myPredictions = []) {
 
 function setupSharedLayout() {
   const userLabel = document.getElementById('currentUser');
-  const userAvatar = document.getElementById('userAvatar');
   if (userLabel) userLabel.textContent = state.user?.username || '';
-  if (userAvatar) userAvatar.textContent = getUserInitials(state.user?.username || '');
+  renderCurrentUserAvatar();
   updateAdminResetVisibility();
+  ensureProfileModal();
   ensureScoringModal();
   ensurePredictionsHelpModal();
   initSharedShell();
@@ -1963,6 +2315,43 @@ function getUserInitials(username) {
     .map((part) => part[0] || '')
     .join('')
     .toUpperCase() || 'PM';
+}
+
+function getAvatarMarkup(user, className = 'user-avatar') {
+  const image = String(user?.avatarImage || '').trim();
+  const preset = String(user?.avatarPreset || '').trim();
+  const initials = getUserInitials(user?.username || 'PM');
+
+  if (image) {
+    return `<span class="${className}"><img class="avatar-image" src="${image}" alt="Avatar de ${escapeHtml(user?.username || 'usuario')}" /></span>`;
+  }
+
+  if (preset) {
+    return `<span class="${className} avatar-preset" aria-label="Avatar de ${escapeHtml(user?.username || 'usuario')}">${escapeHtml(preset)}</span>`;
+  }
+
+  return `<span class="${className} avatar-initials" aria-label="Iniciales de ${escapeHtml(user?.username || 'usuario')}">${escapeHtml(initials)}</span>`;
+}
+
+function renderCurrentUserAvatar() {
+  const userAvatar = document.getElementById('userAvatar');
+  if (!userAvatar) return;
+  userAvatar.outerHTML = getAvatarMarkup(state.user, 'user-avatar').replace('<span class="user-avatar"', '<span id="userAvatar" class="user-avatar"');
+}
+
+function decorateLeaderboardAvatars(list, leaderboard) {
+  const rows = list.querySelectorAll('.leaderboard-row');
+  rows.forEach((rowNode, index) => {
+    const userNode = rowNode.querySelector('.leaderboard-user');
+    const nameNode = rowNode.querySelector('.leaderboard-name');
+    if (!userNode || !nameNode || userNode.querySelector('.leaderboard-user-head')) return;
+
+    const head = document.createElement('div');
+    head.className = 'leaderboard-user-head';
+    head.innerHTML = `${getAvatarMarkup(leaderboard[index], 'leaderboard-avatar')}${nameNode.outerHTML}`;
+    nameNode.remove();
+    userNode.prepend(head);
+  });
 }
 
 function openMoreSheet() {
@@ -1997,6 +2386,19 @@ function initSharedShell() {
   document.body.dataset.sharedShellReady = 'true';
 
   document.addEventListener('click', (event) => {
+    const avatarSectionButton = event.target.closest('[data-avatar-section]');
+    if (avatarSectionButton) {
+      state.activeAvatarSection = avatarSectionButton.dataset.avatarSection || 'Futbol';
+      syncProfileModal();
+      return;
+    }
+
+    if (event.target.closest('[data-open-profile]')) {
+      closeMoreSheet();
+      openProfileModal();
+      return;
+    }
+
     if (event.target.closest('[data-open-scoring]')) {
       closeMoreSheet();
       openScoringModal();
@@ -2014,6 +2416,11 @@ function initSharedShell() {
       return;
     }
 
+    if (event.target.closest('[data-close-profile]')) {
+      closeProfileModal();
+      return;
+    }
+
     if (event.target.closest('[data-close-predictions-help]')) {
       closePredictionsHelpModal();
       return;
@@ -2021,6 +2428,14 @@ function initSharedShell() {
 
     if (event.target.closest('[data-open-more]')) {
       openMoreSheet();
+      return;
+    }
+
+    const bracketTabButton = event.target.closest('[data-bracket-tab]');
+    if (bracketTabButton) {
+      const nextTab = bracketTabButton.dataset.bracketTab === 'predicted' ? 'predicted' : 'real';
+      state.bracketTab = nextTab;
+      updateBracketView();
       return;
     }
 
@@ -2032,6 +2447,21 @@ function initSharedShell() {
     if (event.target.closest('[data-logout]')) {
       clearSession();
       window.location.href = 'index.html';
+      return;
+    }
+
+    if (event.target.closest('[data-remove-profile-photo]')) {
+      state.profileDraftImage = '';
+      const input = document.getElementById('profileImageInput');
+      if (input) input.value = '';
+      syncProfileModal();
+      return;
+    }
+
+    if (event.target.closest('[data-save-profile]')) {
+      saveProfileSettings().catch((error) => {
+        toast(error.message || 'No se pudo actualizar el perfil.', 'error');
+      });
       return;
     }
 
@@ -2059,9 +2489,33 @@ function initSharedShell() {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
+      closeProfileModal();
       closeScoringModal();
       closePredictionsHelpModal();
       closeMoreSheet();
+    }
+  });
+
+  document.addEventListener('change', async (event) => {
+    if (event.target.matches('input[name="avatarPreset"]')) {
+      syncProfileModal();
+      return;
+    }
+
+    if (event.target.id === 'profileImageInput') {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (file.size > 1_000_000) {
+        event.target.value = '';
+        toast('La imagen debe pesar menos de 1 MB.', 'error');
+        return;
+      }
+      try {
+        state.profileDraftImage = await readImageAsDataUrl(file);
+        syncProfileModal();
+      } catch (error) {
+        toast(error.message || 'No se pudo cargar la imagen.', 'error');
+      }
     }
   });
 }
@@ -2151,6 +2605,155 @@ function renderPredictionsHelpModal() {
       </div>
     </div>
   `;
+}
+
+function renderProfileModal() {
+  const selectedPreset = String(state.user?.avatarPreset || '');
+  return `
+    <div class="modal-shell hidden" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <div class="modal-backdrop" data-close-profile></div>
+      <div class="modal-card profile-modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Tu perfil</p>
+            <h3 id="profileModalTitle">Avatar y foto</h3>
+          </div>
+          <button class="modal-close" type="button" aria-label="Cerrar" data-close-profile>&times;</button>
+        </div>
+        <div class="modal-body scoring-modal-body">
+          <section class="profile-card">
+            <div class="profile-preview">${getAvatarMarkup({ ...state.user, avatarImage: state.profileDraftImage || state.user?.avatarImage || '' }, 'profile-avatar-preview')}</div>
+            <div class="profile-copy">
+              <strong>${escapeHtml(state.user?.username || '')}</strong>
+              <span>Sube una foto o usa un avatar predefinido.</span>
+            </div>
+          </section>
+          <section class="profile-section">
+            <h4>Avatares</h4>
+            <div class="avatar-section-tabs" aria-label="Categorias de avatar">
+              ${AVATAR_PRESET_SECTIONS.map((section) => `
+                <button
+                  class="avatar-section-tab ${section.title === state.activeAvatarSection ? 'is-active' : ''}"
+                  type="button"
+                  data-avatar-section="${escapeHtml(section.title)}"
+                >
+                  ${escapeHtml(section.title)}
+                </button>
+              `).join('')}
+            </div>
+            <div class="avatar-section-list">
+              ${AVATAR_PRESET_SECTIONS.map((section) => `
+                <section class="avatar-section ${section.title === state.activeAvatarSection ? '' : 'hidden'}" data-avatar-panel="${escapeHtml(section.title)}">
+                  <div class="avatar-section-head">
+                    <strong>${escapeHtml(section.title)}</strong>
+                  </div>
+                  <div class="avatar-preset-grid">
+                    ${section.items.map((preset) => `
+                      <label class="avatar-preset-option ${preset === selectedPreset ? 'is-selected' : ''}">
+                        <input class="visually-hidden" type="radio" name="avatarPreset" value="${escapeHtml(preset)}" ${preset === selectedPreset ? 'checked' : ''} />
+                        <span>${escapeHtml(preset)}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                </section>
+              `).join('')}
+            </div>
+          </section>
+          <section class="profile-section">
+            <h4>Foto de perfil</h4>
+            <label class="profile-upload">
+              <span>Seleccionar imagen</span>
+              <input id="profileImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+            </label>
+            <div class="profile-actions">
+              <button class="secondary-button" type="button" data-remove-profile-photo ${state.profileDraftImage || state.user?.avatarImage ? '' : 'disabled'}>Quitar foto</button>
+            </div>
+          </section>
+          <button class="primary-button" type="button" data-save-profile>Guardar perfil</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function ensureProfileModal() {
+  const existing = document.getElementById('profileModal');
+  if (existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', renderProfileModal());
+}
+
+function syncProfileModal() {
+  const modal = document.getElementById('profileModal');
+  if (!modal) return;
+  const preview = modal.querySelector('.profile-preview');
+  const removeButton = modal.querySelector('[data-remove-profile-photo]');
+  const selectedPreset = modal.querySelector('input[name="avatarPreset"]:checked')?.value || '';
+  if (preview) {
+    preview.innerHTML = getAvatarMarkup(
+      { ...state.user, avatarPreset: selectedPreset, avatarImage: state.profileDraftImage || '' },
+      'profile-avatar-preview'
+    );
+  }
+  modal.querySelectorAll('.avatar-preset-option').forEach((item) => {
+    const input = item.querySelector('input[name="avatarPreset"]');
+    item.classList.toggle('is-selected', input?.checked);
+  });
+  modal.querySelectorAll('[data-avatar-section]').forEach((tab) => {
+    tab.classList.toggle('is-active', tab.dataset.avatarSection === state.activeAvatarSection);
+  });
+  modal.querySelectorAll('[data-avatar-panel]').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.dataset.avatarPanel !== state.activeAvatarSection);
+  });
+  if (removeButton) removeButton.disabled = !(state.profileDraftImage || state.user?.avatarImage);
+}
+
+function openProfileModal() {
+  state.profileDraftImage = state.user?.avatarImage || '';
+  ensureProfileModal();
+  const modal = document.getElementById('profileModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  syncProfileModal();
+}
+
+function closeProfileModal() {
+  const modal = document.getElementById('profileModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  document.body.classList.remove('modal-open');
+}
+
+function readImageAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveProfileSettings() {
+  const modal = document.getElementById('profileModal');
+  if (!modal) return;
+  const preset = modal.querySelector('input[name="avatarPreset"]:checked')?.value || '';
+  const payload = await apiFetch('/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      avatarPreset: preset,
+      avatarImage: state.profileDraftImage || ''
+    })
+  });
+  state.user = payload.user;
+  localStorage.setItem('pm_user', JSON.stringify(payload.user));
+  renderCurrentUserAvatar();
+  closeProfileModal();
+  toast('Perfil actualizado.');
+  if (document.getElementById('leaderboardList')) {
+    const list = document.getElementById('leaderboardList');
+    const emptyState = document.getElementById('emptyLeaderboard');
+    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+  }
 }
 
 function ensureScoringModal() {
@@ -2575,6 +3178,7 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         </div>
       `;
     }).join('');
+    decorateLeaderboardAvatars(list, leaderboard);
     emptyState.classList.toggle('hidden', leaderboard.length > 0);
   } catch (error) {
     list.innerHTML = '';
@@ -2636,3 +3240,7 @@ async function initLeaderboardPage() {
 initAuthPage();
 initDashboardPage();
 initLeaderboardPage();
+
+
+
+

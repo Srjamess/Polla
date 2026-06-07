@@ -18,6 +18,14 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    avatarPreset: {
+      type: String,
+      default: ''
+    },
+    avatarImage: {
+      type: String,
+      default: ''
+    },
     totalPoints: {
       type: Number,
       default: 0
