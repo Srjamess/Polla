@@ -456,6 +456,16 @@ async function signInWithGoogle() {
   window.location.href = 'dashboard.html';
 }
 
+async function sendPasswordResetLink(email) {
+  const trimmedEmail = String(email || '').trim();
+  if (!trimmedEmail) {
+    throw new Error('Escribe el correo de tu cuenta antes de enviar el enlace.');
+  }
+
+  const auth = await initializeFirebaseAuth();
+  await auth.sendPasswordResetEmail(trimmedEmail);
+}
+
 function getFirebaseAuthErrorMessage(error) {
   const code = String(error?.code || '');
 
@@ -469,6 +479,14 @@ function getFirebaseAuthErrorMessage(error) {
 
   if (code === 'auth/account-exists-with-different-credential') {
     return 'Ese correo ya existe con otro metodo de acceso.';
+  }
+
+  if (code === 'auth/user-not-found') {
+    return 'No encontramos una cuenta con ese correo. Verifica el email o entra con Google si esa fue tu forma de registro.';
+  }
+
+  if (code === 'auth/invalid-email') {
+    return 'Escribe un correo valido.';
   }
 
   return error?.message || 'No se pudo completar la autenticacion.';
@@ -4191,7 +4209,8 @@ function initAuthPage() {
   const loginForm    = document.getElementById('loginForm');
   const registerForm = document.getElementById('registerForm');
   const googleLoginButton = document.getElementById('googleLoginButton');
-  if (!loginForm || !registerForm || !googleLoginButton) return;
+  const resetPasswordButton = document.querySelector('[data-reset-password]');
+  if (!loginForm || !registerForm || !googleLoginButton || !resetPasswordButton) return;
 
   const authCard      = document.querySelector('.auth-card');
   const toggleButtons = document.querySelectorAll('[data-auth-mode]');
@@ -4237,6 +4256,16 @@ function initAuthPage() {
       window.location.href = 'dashboard.html';
     } catch (error) {
       toast(error.message, 'error');
+    }
+  });
+
+  resetPasswordButton.addEventListener('click', async () => {
+    try {
+      const emailInput = loginForm.querySelector('input[name="email"]');
+      await sendPasswordResetLink(emailInput?.value || '');
+      toast('Te enviamos un correo para restablecer tu contraseña.');
+    } catch (error) {
+      toast(getFirebaseAuthErrorMessage(error), 'error');
     }
   });
 

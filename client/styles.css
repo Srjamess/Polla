@@ -356,6 +356,25 @@ input[type="number"]::-webkit-inner-spin-button {
   line-height: 1.5;
 }
 
+.auth-link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-green);
+  font-size: 13px;
+  text-align: left;
+  justify-self: start;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .auth-link-button:hover,
+  .auth-link-button:focus-visible {
+    color: #bbf7d0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
 .auth-form h2,
 .admin-panel h2 {
   margin: 0;
