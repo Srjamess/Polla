@@ -534,6 +534,43 @@ input[type="number"]::-webkit-inner-spin-button {
   color: var(--text-secondary);
 }
 
+.admin-worst-team-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  margin-inline: auto;
+  padding: 14px;
+  width: min(100%, 680px);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-worst-team-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-worst-team-copy span {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.admin-worst-team-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-worst-team-controls select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
 .groups-board,
 .knockout-board,
 .leaderboard-list,
@@ -2250,6 +2287,11 @@ body.modal-open {
 
   .prediction-special-card {
     width: min(100%, 680px);
+  }
+
+  .admin-worst-team-controls {
+    grid-template-columns: minmax(0, 1fr) 220px;
+    align-items: end;
   }
 
   .standings-grid,

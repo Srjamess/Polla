@@ -11,15 +11,54 @@ const router = express.Router();
 router.use(authenticate);
 router.use(requireAdmin);
 
+function getUniqueTeams(matches) {
+  return [...new Set(
+    matches
+      .flatMap((match) => [match.teamA, match.teamB])
+      .map((team) => String(team || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, 'es'));
+}
+
 router.get('/settings', async (req, res) => {
   try {
     const settings = await getAppSettings();
+    const matches = await Match.find().select('teamA teamB');
     res.json({
       predictionsLocked: Boolean(settings.predictionsLocked),
+      actualWorstTeam: settings.actualWorstTeam || '',
+      teams: getUniqueTeams(matches),
       updatedAt: settings.updatedAt
     });
   } catch (error) {
     res.status(500).json({ message: 'No se pudo cargar la configuracion de admin.' });
+  }
+});
+
+router.post('/worst-team', async (req, res) => {
+  try {
+    const matches = await Match.find().select('teamA teamB');
+    const teams = getUniqueTeams(matches);
+    const actualWorstTeam = String(req.body?.actualWorstTeam || '').trim();
+
+    if (actualWorstTeam && !teams.includes(actualWorstTeam)) {
+      return res.status(400).json({ message: 'Selecciona un equipo valido.' });
+    }
+
+    const settings = await getAppSettings();
+    settings.actualWorstTeam = actualWorstTeam;
+    await settings.save();
+    await recalculateAllScores();
+
+    res.json({
+      message: actualWorstTeam ? 'Peor equipo oficial actualizado.' : 'Peor equipo oficial limpiado.',
+      actualWorstTeam: settings.actualWorstTeam || '',
+      predictionsLocked: Boolean(settings.predictionsLocked),
+      teams,
+      updatedAt: settings.updatedAt
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'No se pudo actualizar el peor equipo oficial.' });
   }
 });
 
@@ -59,6 +98,9 @@ router.post('/reset-pruebas', async (req, res) => {
 
     const predictionDelete = await Prediction.deleteMany({});
     const userUpdate = await User.updateMany({}, { $set: { totalPoints: 0 } });
+    const settings = await getAppSettings();
+    settings.actualWorstTeam = '';
+    await settings.save();
 
     await recalculateAllScores();
 

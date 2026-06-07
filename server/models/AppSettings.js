@@ -11,6 +11,10 @@ const appSettingsSchema = new mongoose.Schema(
     predictionsLocked: {
       type: Boolean,
       default: false
+    },
+    actualWorstTeam: {
+      type: String,
+      default: ''
     }
   },
   { timestamps: true }

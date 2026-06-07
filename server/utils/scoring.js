@@ -1,6 +1,7 @@
 const Match = require('../models/Match');
 const Prediction = require('../models/Prediction');
 const User = require('../models/User');
+const { getAppSettings } = require('./appSettings');
 const {
   buildPredictionMap,
   buildResolutionContext,
@@ -30,10 +31,11 @@ function calculateMatchPoints(prediction, match) {
 }
 
 async function recalculateAllScores() {
-  const [matches, predictions, users] = await Promise.all([
+  const [matches, predictions, users, settings] = await Promise.all([
     Match.find(),
     Prediction.find(),
-    User.find().select('_id')
+    User.find().select('_id predictedWorstTeam'),
+    getAppSettings()
   ]);
 
   const matchById = new Map(matches.map((match) => [String(match._id), match]));
@@ -78,7 +80,8 @@ async function recalculateAllScores() {
     const predictedContext = buildResolutionContext(matches, buildPredictionMap(userPredictions));
     const bonusPoints =
       calculateGroupBonus(actualContext, predictedContext) +
-      calculateKnockoutBonus(matches, actualContext, predictedContext);
+      calculateKnockoutBonus(matches, actualContext, predictedContext) +
+      (settings.actualWorstTeam && String(user.predictedWorstTeam || '') === String(settings.actualWorstTeam) ? 5 : 0);
 
     totalsByUser.set(userId, (totalsByUser.get(userId) || 0) + bonusPoints);
   });

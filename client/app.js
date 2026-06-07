@@ -2319,6 +2319,7 @@ function renderFixture(matches, myPredictions = []) {
   matchesBoard.innerHTML = `
     <section class="screen-section">
       ${renderMatchesSchedule(matches)}
+      ${state.user?.isAdmin ? renderAdminWorstTeamCard() : ''}
     </section>
   `;
 
@@ -2461,6 +2462,18 @@ function updateAdminResetVisibility() {
     button.classList.toggle('hidden', !state.user?.isAdmin);
   });
   updateAdminPredictionsLockVisibility();
+}
+
+function renderAdminPanel() {
+  const adminPanel = document.getElementById('adminPanel');
+  if (!adminPanel || !state.user?.isAdmin) return;
+
+  adminPanel.innerHTML = `
+    <h2>Administracion</h2>
+    <p class="admin-note">
+      El fixture oficial ya esta cargado. Usa los formularios dentro de cada tarjeta para guardar resultados reales y definir el clasificado en cruces empatados.
+    </p>
+  `;
 }
 
 function updateAdminPredictionsLockVisibility() {
@@ -2648,6 +2661,13 @@ function initSharedShell() {
       return;
     }
 
+    if (event.target.closest('[data-save-admin-worst-team]')) {
+      saveAdminWorstTeam().catch((error) => {
+        toast(error.message || 'No se pudo guardar el peor equipo oficial.', 'error');
+      });
+      return;
+    }
+
     if (event.target.closest('[data-admin-lock-predictions]')) {
       if (!state.user?.isAdmin) return;
       const confirmed = window.confirm('Esto cerrara todas las predicciones para todos los usuarios. Continuar?');
@@ -2741,21 +2761,25 @@ function renderScoringModal() {
               <span class="scoring-hero-badge">Resumen rapido</span>
               <p>Tu puntaje final mezcla aciertos directos de partidos y bonos por leer bien el desarrollo del torneo.</p>
             </div>
-            <div class="scoring-hero-grid">
-              <article class="scoring-stat">
-                <strong>3 pts</strong>
-                <span>Marcador exacto</span>
-              </article>
+              <div class="scoring-hero-grid">
+                <article class="scoring-stat">
+                  <strong>3 pts</strong>
+                  <span>Marcador exacto</span>
+                </article>
               <article class="scoring-stat">
                 <strong>1 pt</strong>
                 <span>Ganador o empate</span>
               </article>
-              <article class="scoring-stat">
-                <strong>+12</strong>
-                <span>Campeon correcto</span>
-              </article>
-            </div>
-          </section>
+                <article class="scoring-stat">
+                  <strong>+12</strong>
+                  <span>Campeon correcto</span>
+                </article>
+                <article class="scoring-stat">
+                  <strong>+5</strong>
+                  <span>Peor equipo correcto</span>
+                </article>
+              </div>
+            </section>
 
           <section class="scoring-block scoring-block-accent">
             <div class="scoring-block-head">
@@ -2788,19 +2812,24 @@ function renderScoringModal() {
                 <strong>Fase de grupos</strong>
                 <p>Por cada grupo completo obtienes <strong>2 puntos</strong> por cada clasificado correcto y <strong>1 punto extra</strong> si tambien clavas su posicion exacta.</p>
               </article>
-              <article class="scoring-explainer-card">
-                <strong>Fases eliminatorias</strong>
-                <p>Los bonos se calculan por cada equipo correcto ubicado en la llave real de esa ronda.</p>
-              </article>
-            </div>
-            <div class="scoring-chip-row">
-              <span class="scoring-chip">Octavos: +2 por equipo</span>
-              <span class="scoring-chip">Cuartos: +3 por equipo</span>
-              <span class="scoring-chip">Semifinal: +5 por equipo</span>
-              <span class="scoring-chip">Final: +8 por equipo</span>
-              <span class="scoring-chip">Tercer puesto: +2 por equipo</span>
-              <span class="scoring-chip scoring-chip-gold">Campeon: +12 extra</span>
-            </div>
+                <article class="scoring-explainer-card">
+                  <strong>Fases eliminatorias</strong>
+                  <p>Los bonos se calculan por cada equipo correcto ubicado en la llave real de esa ronda.</p>
+                </article>
+                <article class="scoring-explainer-card">
+                  <strong>Peor equipo del torneo</strong>
+                  <p>Si aciertas la seleccion marcada al final como peor equipo oficial del torneo, sumas <strong>5 puntos</strong>.</p>
+                </article>
+              </div>
+              <div class="scoring-chip-row">
+                <span class="scoring-chip">Octavos: +2 por equipo</span>
+                <span class="scoring-chip">Cuartos: +3 por equipo</span>
+                <span class="scoring-chip">Semifinal: +5 por equipo</span>
+                <span class="scoring-chip">Final: +8 por equipo</span>
+                <span class="scoring-chip">Tercer puesto: +2 por equipo</span>
+                <span class="scoring-chip">Peor equipo: +5</span>
+                <span class="scoring-chip scoring-chip-gold">Campeon: +12 extra</span>
+              </div>
           </section>
 
           <section class="scoring-block">
@@ -2813,10 +2842,10 @@ function renderScoringModal() {
                 <strong>1. Se carga el resultado</strong>
                 <p>Cuando el admin registra un resultado oficial, ese partido queda listo para puntuar.</p>
               </div>
-              <div class="scoring-timeline-step">
-                <strong>2. Se recalcula tu total</strong>
-                <p>Se suman tus puntos directos del partido y los bonos de grupos o eliminatoria que ya correspondan.</p>
-              </div>
+                <div class="scoring-timeline-step">
+                  <strong>2. Se recalcula tu total</strong>
+                  <p>Se suman tus puntos directos del partido y los bonos de grupos, eliminatoria o peor equipo que ya correspondan.</p>
+                </div>
               <div class="scoring-timeline-step">
                 <strong>3. Se mueve la tabla general</strong>
                 <p>El leaderboard muestra el acumulado actualizado de todos los usuarios.</p>
@@ -2825,8 +2854,8 @@ function renderScoringModal() {
           </section>
 
           <section class="scoring-note">
-            <strong>Importante:</strong> los bonos de grupo solo cuentan cuando el grupo ya esta completo, y los bonos del bracket dependen de que los equipos queden ubicados en la llave real.
-          </section>
+              <strong>Importante:</strong> los bonos de grupo solo cuentan cuando el grupo ya esta completo, los bonos del bracket dependen de la llave real y el bono de peor equipo solo cuenta cuando el admin fija el peor equipo oficial.
+            </section>
         </div>
       </div>
     </div>
@@ -3002,6 +3031,34 @@ function renderWorstTeamPredictionCard() {
   `;
 }
 
+function renderAdminWorstTeamCard() {
+  if (!state.user?.isAdmin) return '';
+
+  const teams = (state.adminSettings?.teams && state.adminSettings.teams.length)
+    ? state.adminSettings.teams
+    : getTournamentTeams();
+  const selectedTeam = state.adminSettings?.actualWorstTeam || '';
+
+  return `
+    <section class="admin-worst-team-card">
+      <div class="admin-worst-team-copy">
+        <strong>Peor equipo oficial</strong>
+        <span>Define la seleccion oficial para activar el bono de +5 puntos.</span>
+      </div>
+      <div class="admin-worst-team-controls">
+        <label class="prediction-special-field">
+          <span>Equipo oficial</span>
+          <select data-admin-worst-team-select>
+            <option value="">Sin definir</option>
+            ${teams.map((team) => `<option value="${escapeHtml(team)}" ${team === selectedTeam ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
+          </select>
+        </label>
+        <button class="secondary-button" type="button" data-save-admin-worst-team>Guardar peor equipo</button>
+      </div>
+    </section>
+  `;
+}
+
 function renderMyPredictionsCardsByStage(predictions) {
   if (!predictions.length) {
     return '<p class="empty-state">Aun no tienes predicciones guardadas.</p>';
@@ -3103,6 +3160,30 @@ async function setPredictionsLock(locked) {
   syncProfileModal();
   await loadMatches();
   toast(payload.message || (locked ? 'Predicciones bloqueadas.' : 'Predicciones reabiertas.'));
+}
+
+async function saveAdminWorstTeam() {
+  const select = document.querySelector('[data-admin-worst-team-select]');
+  if (!select || !state.user?.isAdmin) return;
+
+  const payload = await apiFetch('/admin/worst-team', {
+    method: 'POST',
+    body: JSON.stringify({
+      actualWorstTeam: select.value
+    })
+  });
+
+  state.adminSettings = {
+    ...(state.adminSettings || {}),
+    actualWorstTeam: payload.actualWorstTeam || '',
+    predictionsLocked: Boolean(payload.predictionsLocked),
+    teams: payload.teams || state.adminSettings?.teams || [],
+    updatedAt: payload.updatedAt
+  };
+  updateAdminPredictionsLockVisibility();
+  renderAdminPanel();
+  await loadMatches();
+  toast(payload.message || 'Peor equipo oficial actualizado.');
 }
 
 async function openProfileModal() {
@@ -3459,6 +3540,7 @@ async function initDashboardPage() {
   };
 
   if (state.user?.isAdmin && adminPanel) adminPanel.classList.remove('hidden');
+  renderAdminPanel();
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
