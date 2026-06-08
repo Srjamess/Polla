@@ -1,6 +1,6 @@
 # Polla Mundialista
 
-Aplicacion full-stack para hacer predicciones de partidos del Mundial. Incluye autenticacion con Firebase, usuarios, partidos, predicciones, control de pagos, calculo de puntos y leaderboard.
+Aplicacion full-stack para hacer predicciones de partidos del Mundial. Incluye autenticacion con Firebase, cuentas con varias entradas competidoras, partidos, predicciones, control de pagos, calculo de puntos y leaderboard.
 
 ## Stack
 
@@ -109,10 +109,12 @@ El script borra los partidos existentes e inserta un fixture demo con grupos A/B
 
 ## Reglas de prediccion
 
-- Cada usuario puede guardar una prediccion por partido.
-- La prediccion se actualiza con upsert si el usuario vuelve a guardarla.
+- Cada cuenta puede crear varias entradas o perfiles de competencia.
+- Cada entrada puede guardar una prediccion por partido.
+- La prediccion se actualiza con upsert si la entrada vuelve a guardarla.
 - Las predicciones se bloquean automaticamente cuando `matchDate` ya paso.
 - Cuando un admin guarda el resultado real, se recalculan los puntos.
+- Desde el modal de perfil puedes crear y eliminar entradas; al eliminar una entrada se borran tambien sus predicciones.
 
 ## Puntuacion
 
@@ -128,6 +130,12 @@ El script borra los partidos existentes e inserta un fixture demo con grupos A/B
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `GET /api/auth/config`
+
+### Entradas
+
+- `GET /api/entries`
+- `POST /api/entries`
+- `PATCH /api/entries/active`
 
 ### Partidos
 
@@ -155,8 +163,46 @@ El script borra los partidos existentes e inserta un fixture demo con grupos A/B
 ## Pagos
 
 - El modelo `User` incluye `isPaid` para marcar si un usuario ya pago la apuesta.
-- El leaderboard muestra una insignia visual cuando `isPaid` es verdadero.
+- El leaderboard muestra una insignia visual cuando `isPaid` es verdadero y ordena las entradas por puntos.
 - El panel de administracion permite cambiar ese estado sin tocar puntos, predicciones ni el rol de admin.
+
+## Unificar cuentas duplicadas
+
+Si un mismo jugador termino con varios usuarios, puedes mover sus predicciones a entradas de una sola cuenta sin borrar los datos de la competencia.
+
+Primero crea un respaldo:
+
+```bash
+npm run backup:data -- --label before-merge
+```
+
+Ese comando guarda un snapshot en `.backups/`.
+
+Script disponible:
+
+```bash
+npm run merge:accounts -- --target <usuario_destino> --source <usuario_origen_1> --source <usuario_origen_2> --dry-run
+```
+
+- `--target` puede ser `id`, `username` o `email`.
+- `--source` puede repetirse varias veces.
+- `--dry-run` muestra el plan sin escribir nada.
+- `--delete-sources` es obligatorio para la ejecucion real y elimina las cuentas origen despues de mover sus entradas y predicciones.
+- El merge real crea un backup automatico antes de tocar la base, salvo que uses `--skip-backup`.
+
+Ejemplo real:
+
+```bash
+npm run merge:accounts -- --target juan@mail.com --source juan.1@mail.com --source juan.2@mail.com --delete-sources
+```
+
+El script crea una entrada por cada cuenta origen, reasigna sus predicciones a esas entradas y luego recalcula los puntos.
+
+Si necesitas volver atras:
+
+```bash
+npm run restore:data -- --latest --yes
+```
 
 ## Deploy en Render.com
 
@@ -189,5 +235,5 @@ Render asigna `PORT` automaticamente, pero puedes dejarlo configurado si lo nece
 
 - Firebase maneja la sesion del usuario y el backend verifica su `ID token`.
 - La app usa `isAdmin` para el panel de administracion y `isPaid` para el control de pagos.
-- El frontend usa `localStorage` para guardar el perfil y refresca el token con Firebase.
+- El frontend usa `localStorage` para guardar la cuenta, las entradas y la entrada activa, y refresca el token con Firebase.
 - Todos los endpoints no-auth estan protegidos con middleware de Firebase Auth.

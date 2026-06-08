@@ -11,6 +11,9 @@
     "seed:groups": "node scripts/seed-groups.js",
     "reset:test": "node scripts/reset-test.js",
     "reset:pruebas": "node scripts/reset-pruebas.js",
+    "merge:accounts": "node scripts/merge-accounts.js",
+    "backup:data": "node scripts/backup-data.js",
+    "restore:data": "node scripts/restore-data.js",
     "scenario:four-users": "node scripts/scenario-four-users.js",
     "scenario:two-users": "node scripts/scenario-two-users.js",
     "seed:james-s": "node scripts/seed-james-s.js"

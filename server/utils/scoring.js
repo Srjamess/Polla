@@ -1,7 +1,9 @@
 const Match = require('../models/Match');
 const Prediction = require('../models/Prediction');
+const Entry = require('../models/Entry');
 const User = require('../models/User');
 const { getAppSettings } = require('./appSettings');
+const { ensureUserEntries } = require('./entries');
 const {
   buildPredictionMap,
   buildResolutionContext,
@@ -56,35 +58,61 @@ async function recalculateAllScores() {
     })
   );
 
+  const userContexts = new Map();
+  await Promise.all(
+    users.map(async (user) => {
+      const context = await ensureUserEntries(user);
+      userContexts.set(String(user._id), context);
+    })
+  );
+
   const refreshedPredictions = await Prediction.find();
-  const predictionsByUser = new Map();
+  const predictionsByEntry = new Map();
 
   refreshedPredictions.forEach((prediction) => {
-    const userId = String(prediction.user);
-    if (!predictionsByUser.has(userId)) predictionsByUser.set(userId, []);
-    predictionsByUser.get(userId).push(prediction);
+    const entryId = prediction.entry ? String(prediction.entry) : '';
+
+    if (entryId) {
+      if (!predictionsByEntry.has(entryId)) predictionsByEntry.set(entryId, []);
+      predictionsByEntry.get(entryId).push(prediction);
+    }
   });
 
   const actualContext = buildResolutionContext(matches);
+  const totalsByEntry = new Map();
   const totalsByUser = new Map(users.map((user) => [String(user._id), 0]));
 
-  refreshedPredictions.forEach((prediction) => {
-    if (!prediction.scored) return;
-    const userId = String(prediction.user);
-    totalsByUser.set(userId, (totalsByUser.get(userId) || 0) + prediction.points);
-  });
-
-  users.forEach((user) => {
+  for (const user of users) {
     const userId = String(user._id);
-    const userPredictions = predictionsByUser.get(userId) || [];
-    const predictedContext = buildResolutionContext(matches, buildPredictionMap(userPredictions));
-    const bonusPoints =
-      calculateGroupBonus(actualContext, predictedContext) +
-      calculateKnockoutBonus(matches, actualContext, predictedContext) +
-      (settings.actualWorstTeam && String(user.predictedWorstTeam || '') === String(settings.actualWorstTeam) ? 5 : 0);
+    const context = userContexts.get(userId);
+    const entries = context?.entries || [];
 
-    totalsByUser.set(userId, (totalsByUser.get(userId) || 0) + bonusPoints);
-  });
+    for (const entry of entries) {
+      const entryId = String(entry._id);
+      const entryPredictions = predictionsByEntry.get(entryId) || [];
+      let entryTotal = 0;
+
+      entryPredictions.forEach((prediction) => {
+        if (!prediction.scored) return;
+        entryTotal += Number(prediction.points || 0);
+      });
+
+      const predictedContext = buildResolutionContext(matches, buildPredictionMap(entryPredictions));
+      entryTotal +=
+        calculateGroupBonus(actualContext, predictedContext) +
+        calculateKnockoutBonus(matches, actualContext, predictedContext) +
+        (settings.actualWorstTeam && String(entry.predictedWorstTeam || '') === String(settings.actualWorstTeam) ? 5 : 0);
+
+      totalsByEntry.set(entryId, entryTotal);
+      totalsByUser.set(userId, (totalsByUser.get(userId) || 0) + entryTotal);
+    }
+  }
+
+  await Promise.all(
+    [...totalsByEntry.entries()].map(([entryId, totalPoints]) =>
+      Entry.findByIdAndUpdate(entryId, { totalPoints })
+    )
+  );
 
   await Promise.all(
     [...totalsByUser.entries()].map(([userId, totalPoints]) =>

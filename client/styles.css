@@ -2197,6 +2197,42 @@ input[type="number"]::-webkit-inner-spin-button {
   gap: 12px;
 }
 
+.profile-field {
+  display: grid;
+  gap: 8px;
+}
+
+.profile-field span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.profile-field input {
+  min-height: 46px;
+  padding: 0 14px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.profile-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-section-head h4 {
+  margin: 0;
+}
+
+.profile-section-head span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .profile-card {
   justify-items: center;
   padding: 14px;
@@ -2360,6 +2396,92 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .profile-actions .secondary-button {
   width: 100%;
+}
+
+.profile-actions-stacked {
+  flex-direction: column;
+}
+
+.entry-switcher {
+  display: grid;
+  gap: 10px;
+}
+
+.entry-switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.entry-switcher-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.entry-switcher-delete {
+  flex: 0 0 auto;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  font-size: 12px;
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+}
+
+.entry-switcher-delete:hover,
+.entry-switcher-delete:focus-visible {
+  border-color: var(--danger-border, #e76f51);
+  color: var(--danger-text, #e0452f);
+  background: var(--danger-bg, rgba(224, 69, 47, 0.08));
+}
+
+.entry-switcher-item:hover,
+.entry-switcher-item:focus-visible {
+  border-color: var(--accent-green-border);
+  background: var(--accent-green-bg);
+}
+
+.entry-switcher-item.is-active {
+  border-color: var(--accent-green-border);
+  background: var(--accent-green-bg);
+}
+
+.entry-switcher-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.entry-switcher-copy strong {
+  font-size: 14px;
+}
+
+.entry-switcher-copy span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.entry-switcher-points {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .sheet-card {
@@ -3189,6 +3311,23 @@ body.modal-open {
   .payment-admin-list-head {
     align-items: start;
     flex-direction: column;
+  }
+
+  .entry-switcher-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .entry-switcher-main {
+    width: 100%;
+  }
+
+  .entry-switcher-points {
+    align-self: flex-end;
+  }
+
+  .entry-switcher-delete {
+    width: 100%;
   }
 
   .payment-admin-hero,

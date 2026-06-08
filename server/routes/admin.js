@@ -1,5 +1,6 @@
 const express = require('express');
 const Match = require('../models/Match');
+const Entry = require('../models/Entry');
 const Prediction = require('../models/Prediction');
 const User = require('../models/User');
 const { authenticate, requireAdmin } = require('../middleware/auth');
@@ -148,7 +149,8 @@ router.post('/reset-pruebas', async (req, res) => {
     );
 
     const predictionDelete = await Prediction.deleteMany({});
-    const userUpdate = await User.updateMany({}, { $set: { totalPoints: 0 } });
+    const entryUpdate = await Entry.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '' } });
+    const userUpdate = await User.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '' } });
     const settings = await getAppSettings();
     settings.actualWorstTeam = '';
     await settings.save();
@@ -159,6 +161,7 @@ router.post('/reset-pruebas', async (req, res) => {
       message: 'Pruebas reiniciadas.',
       matchesUpdated: matchUpdate.modifiedCount,
       predictionsDeleted: predictionDelete.deletedCount,
+      entriesReset: entryUpdate.modifiedCount,
       usersReset: userUpdate.modifiedCount
     });
   } catch (error) {

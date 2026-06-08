@@ -1,6 +1,7 @@
 const express = require('express');
-const User = require('../models/User');
+const Entry = require('../models/Entry');
 const { authenticate } = require('../middleware/auth');
+const { ensureUserEntries } = require('../utils/entries');
 
 const router = express.Router();
 
@@ -8,19 +9,24 @@ router.use(authenticate);
 
 router.get('/', async (req, res) => {
   try {
-    const users = await User.find()
-      .select('username totalPoints avatarPreset avatarImage isPaid')
-      .sort({ totalPoints: -1, username: 1 });
+    const { activeEntry } = await ensureUserEntries(req.user, req.header('x-entry-id'));
 
-    const leaderboard = users.map((user, index) => ({
+    const leaderboardEntries = await Entry.find()
+      .populate('user', 'username isPaid')
+      .select('user name avatarPreset avatarImage totalPoints createdAt')
+      .sort({ totalPoints: -1, name: 1, createdAt: 1 });
+
+    const leaderboard = leaderboardEntries.map((entry, index) => ({
       rank: index + 1,
-      id: user._id,
-      username: user.username,
-      avatarPreset: user.avatarPreset || '',
-      avatarImage: user.avatarImage || '',
-      isPaid: Boolean(user.isPaid),
-      points: user.totalPoints,
-      isCurrentUser: user._id.toString() === req.user._id.toString()
+      id: entry._id,
+      userId: entry.user?._id || null,
+      username: entry.name || '',
+      ownerUsername: entry.user?.username || '',
+      avatarPreset: entry.avatarPreset || '',
+      avatarImage: entry.avatarImage || '',
+      isPaid: Boolean(entry.user?.isPaid),
+      points: Number(entry.totalPoints || 0),
+      isCurrentUser: activeEntry ? String(entry._id) === String(activeEntry._id) : false
     }));
 
     res.json(leaderboard);

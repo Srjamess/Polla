@@ -7,6 +7,12 @@ const predictionSchema = new mongoose.Schema(
       ref: 'User',
       required: true
     },
+    entry: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Entry',
+      default: null,
+      index: true
+    },
     match: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Match',
@@ -39,6 +45,6 @@ const predictionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-predictionSchema.index({ user: 1, match: 1 }, { unique: true });
+predictionSchema.index({ entry: 1, match: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Prediction', predictionSchema);

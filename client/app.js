@@ -10,6 +10,12 @@ function safeParse(value, fallback) {
 const state = {
   user: safeParse(localStorage.getItem('pm_user'), null),
   token: localStorage.getItem('pm_token'),
+  entries: safeParse(localStorage.getItem('pm_entries'), []),
+  activeEntryId: localStorage.getItem('pm_active_entry_id') || '',
+  activeEntry: null,
+  profileDraftName: '',
+  profileDraftPreset: '',
+  profileDraftImageRemoved: false,
   activeView: 'standings',
   matches: [],
   myPredictions: [],
@@ -337,8 +343,16 @@ const demoMatches = [...demoGroupMatches, ...demoKnockoutMatches];
 function clearSession() {
   localStorage.removeItem('pm_token');
   localStorage.removeItem('pm_user');
+  localStorage.removeItem('pm_entries');
+  localStorage.removeItem('pm_active_entry_id');
   state.token = null;
   state.user = null;
+  state.entries = [];
+  state.activeEntryId = '';
+  state.activeEntry = null;
+  state.profileDraftName = '';
+  state.profileDraftPreset = '';
+  state.profileDraftImageRemoved = false;
   state.profileDraftImage = '';
 }
 
@@ -506,6 +520,8 @@ async function apiFetch(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   const token = path === '/auth/config' ? null : await getFreshAccessToken();
   if (token) headers.Authorization = `Bearer ${token}`;
+  const activeEntryId = state.activeEntryId || localStorage.getItem('pm_active_entry_id') || '';
+  if (activeEntryId) headers['X-Entry-Id'] = activeEntryId;
 
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const data = await response.json().catch(() => ({}));
@@ -522,11 +538,30 @@ async function apiFetch(path, options = {}) {
 function setSession(payload) {
   state.token = payload.token;
   state.user = payload.user;
-  state.worstTeamPrediction.predictedWorstTeam = payload.user?.predictedWorstTeam || '';
-  state.worstTeamPrediction.draft = payload.user?.predictedWorstTeam || '';
-  state.profileDraftImage = payload.user?.avatarImage || '';
+  state.entries = Array.isArray(payload.entries) ? payload.entries : [];
+  const storedActiveEntryId = localStorage.getItem('pm_active_entry_id') || '';
+  const fallbackActiveEntryId = payload.activeEntryId || state.entries[0]?.id || '';
+  const activeEntryId = state.entries.some((entry) => String(entry.id) === String(storedActiveEntryId))
+    ? storedActiveEntryId
+    : fallbackActiveEntryId;
+  const activeEntry =
+    state.entries.find((entry) => String(entry.id) === String(activeEntryId)) ||
+    payload.activeEntry ||
+    state.entries[0] ||
+    null;
+
+  state.activeEntryId = activeEntry ? String(activeEntry.id) : '';
+  state.activeEntry = activeEntry;
+  state.profileDraftName = activeEntry?.name || '';
+  state.profileDraftPreset = activeEntry?.avatarPreset || '';
+  state.profileDraftImageRemoved = false;
+  state.worstTeamPrediction.predictedWorstTeam = activeEntry?.predictedWorstTeam || '';
+  state.worstTeamPrediction.draft = activeEntry?.predictedWorstTeam || '';
+  state.profileDraftImage = activeEntry?.avatarImage || '';
   localStorage.setItem('pm_token', payload.token);
   localStorage.setItem('pm_user', JSON.stringify(payload.user));
+  localStorage.setItem('pm_entries', JSON.stringify(state.entries));
+  localStorage.setItem('pm_active_entry_id', state.activeEntryId);
 }
 
 async function requireAuth() {
@@ -542,6 +577,96 @@ async function requireAuth() {
     return false;
   }
   return true;
+}
+
+function normalizeEntryRecord(entry) {
+  if (!entry) return null;
+
+  return {
+    id: String(entry.id || entry._id || ''),
+    userId: String(entry.userId || entry.user || ''),
+    name: String(entry.name || ''),
+    avatarPreset: String(entry.avatarPreset || ''),
+    avatarImage: String(entry.avatarImage || ''),
+    predictedWorstTeam: String(entry.predictedWorstTeam || ''),
+    totalPoints: Number(entry.totalPoints || 0),
+    isCurrentEntry: Boolean(entry.isCurrentEntry),
+    ownerUsername: String(entry.ownerUsername || '')
+  };
+}
+
+function getActiveEntry() {
+  return state.entries.find((entry) => String(entry.id) === String(state.activeEntryId)) || state.activeEntry || null;
+}
+
+function persistEntriesState(entries, activeEntryId, activeEntry) {
+  state.entries = (Array.isArray(entries) ? entries : []).map((entry) => normalizeEntryRecord(entry)).filter(Boolean);
+  const normalizedActiveEntry = normalizeEntryRecord(activeEntry) || getActiveEntry() || state.entries[0] || null;
+  state.activeEntryId = activeEntryId ? String(activeEntryId) : (normalizedActiveEntry?.id || '');
+  state.activeEntry = normalizedActiveEntry;
+  localStorage.setItem('pm_entries', JSON.stringify(state.entries));
+  localStorage.setItem('pm_active_entry_id', state.activeEntryId);
+}
+
+function syncEntryDependentState() {
+  const activeEntry = getActiveEntry();
+  state.activeEntry = activeEntry;
+  state.profileDraftName = activeEntry?.name || '';
+  state.profileDraftPreset = activeEntry?.avatarPreset || '';
+  state.profileDraftImageRemoved = false;
+  state.profileDraftImage = activeEntry?.avatarImage || '';
+  state.worstTeamPrediction = {
+    ...state.worstTeamPrediction,
+    predictedWorstTeam: activeEntry?.predictedWorstTeam || '',
+    draft: activeEntry?.predictedWorstTeam || '',
+    isOpen: false
+  };
+  localStorage.setItem('pm_active_entry_id', state.activeEntryId || '');
+}
+
+async function syncEntriesFromServer({ silent = false } = {}) {
+  try {
+    const payload = await apiFetch('/entries');
+    persistEntriesState(payload.entries || [], payload.activeEntryId || '', payload.activeEntry || null);
+    syncEntryDependentState();
+    return payload;
+  } catch (error) {
+    if (!silent) {
+      toast(error.message || 'No se pudieron cargar las entradas.', 'error');
+    }
+    throw error;
+  }
+}
+
+async function setActiveEntry(entryId, { reload = true, silent = false } = {}) {
+  const nextEntryId = String(entryId || '').trim();
+  if (!nextEntryId) return null;
+
+  const nextEntry = state.entries.find((entry) => String(entry.id) === nextEntryId) || null;
+  if (!nextEntry) return null;
+
+  state.activeEntryId = nextEntryId;
+  state.activeEntry = nextEntry;
+  localStorage.setItem('pm_active_entry_id', nextEntryId);
+  syncEntryDependentState();
+  renderCurrentUserAvatar();
+  renderFixture(state.matches, state.myPredictions);
+
+  if (reload) {
+    await loadMatches();
+    if (document.getElementById('leaderboardList')) {
+      const list = document.getElementById('leaderboardList');
+      const emptyState = document.getElementById('emptyLeaderboard');
+      if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+    }
+    syncProfileModal();
+  }
+
+  if (!silent) {
+    toast(`Entrada activa: ${nextEntry.name}.`);
+  }
+
+  return nextEntry;
 }
 
 function escapeHtml(value) {
@@ -2610,7 +2735,10 @@ function renderFixture(matches, myPredictions = []) {
 
 function setupSharedLayout() {
   const userLabel = document.getElementById('currentUser');
-  if (userLabel) userLabel.textContent = state.user?.username || '';
+  const activeEntry = getActiveEntry();
+  if (userLabel) {
+    userLabel.textContent = [state.user?.username || '', activeEntry?.name || ''].filter(Boolean).join(' · ');
+  }
   renderCurrentUserAvatar();
   void refreshCurrentUserRankBadge({ silent: true });
   updateAdminResetVisibility();
@@ -2703,23 +2831,31 @@ function getUserInitials(username) {
 function getAvatarMarkup(user, className = 'user-avatar') {
   const image = String(user?.avatarImage || '').trim();
   const preset = String(user?.avatarPreset || '').trim();
-  const initials = getUserInitials(user?.username || 'PM');
+  const initials = getUserInitials(user?.username || user?.name || 'PM');
 
   if (image) {
-    return `<span class="${className}"><img class="avatar-image" src="${image}" alt="Avatar de ${escapeHtml(user?.username || 'usuario')}" /></span>`;
+    return `<span class="${className}"><img class="avatar-image" src="${image}" alt="Avatar de ${escapeHtml(user?.username || user?.name || 'usuario')}" /></span>`;
   }
 
   if (preset) {
-    return `<span class="${className} avatar-preset" aria-label="Avatar de ${escapeHtml(user?.username || 'usuario')}">${escapeHtml(preset)}</span>`;
+    return `<span class="${className} avatar-preset" aria-label="Avatar de ${escapeHtml(user?.username || user?.name || 'usuario')}">${escapeHtml(preset)}</span>`;
   }
 
-  return `<span class="${className} avatar-initials" aria-label="Iniciales de ${escapeHtml(user?.username || 'usuario')}">${escapeHtml(initials)}</span>`;
+  return `<span class="${className} avatar-initials" aria-label="Iniciales de ${escapeHtml(user?.username || user?.name || 'usuario')}">${escapeHtml(initials)}</span>`;
 }
 
 function renderCurrentUserAvatar() {
   const userAvatar = document.getElementById('userAvatar');
   if (!userAvatar) return;
-  userAvatar.outerHTML = getAvatarMarkup(state.user, 'user-avatar').replace('<span class="user-avatar"', '<span id="userAvatar" class="user-avatar"');
+  const activeEntry = getActiveEntry();
+  userAvatar.outerHTML = getAvatarMarkup(
+    {
+      username: activeEntry?.name || state.user?.username || 'PM',
+      avatarPreset: activeEntry?.avatarPreset || '',
+      avatarImage: activeEntry?.avatarImage || ''
+    },
+    'user-avatar'
+  ).replace('<span class="user-avatar"', '<span id="userAvatar" class="user-avatar"');
 }
 
 function updateLeaderboardRankBadge(rank) {
@@ -2881,10 +3017,38 @@ function initSharedShell() {
     }
 
     if (event.target.closest('[data-remove-profile-photo]')) {
+      state.profileDraftImageRemoved = true;
       state.profileDraftImage = '';
       const input = document.getElementById('profileImageInput');
       if (input) input.value = '';
       syncProfileModal();
+      return;
+    }
+
+    if (event.target.closest('[data-switch-entry]')) {
+      const button = event.target.closest('[data-switch-entry]');
+      const nextEntryId = button?.dataset.switchEntry;
+      if (!nextEntryId) return;
+      setActiveEntry(nextEntryId, { reload: true }).catch((error) => {
+        toast(error.message || 'No se pudo cambiar la entrada.', 'error');
+      });
+      return;
+    }
+
+    if (event.target.closest('[data-create-entry]')) {
+      createEntryFromModal().catch((error) => {
+        toast(error.message || 'No se pudo crear la entrada.', 'error');
+      });
+      return;
+    }
+
+    if (event.target.closest('[data-delete-entry]')) {
+      const button = event.target.closest('[data-delete-entry]');
+      const entryId = button?.dataset.deleteEntry;
+      if (!entryId) return;
+      deleteEntryFromModal(entryId).catch((error) => {
+        toast(error.message || 'No se pudo eliminar la entrada.', 'error');
+      });
       return;
     }
 
@@ -2955,6 +3119,7 @@ function initSharedShell() {
 
   document.addEventListener('change', async (event) => {
     if (event.target.matches('input[name="avatarPreset"]')) {
+      state.profileDraftPreset = event.target.value || '';
       syncProfileModal();
       return;
     }
@@ -2968,11 +3133,19 @@ function initSharedShell() {
         return;
       }
       try {
+        state.profileDraftImageRemoved = false;
         state.profileDraftImage = await readImageAsDataUrl(file);
         syncProfileModal();
       } catch (error) {
         toast(error.message || 'No se pudo cargar la imagen.', 'error');
       }
+    }
+  });
+
+  document.addEventListener('input', (event) => {
+    const nameInput = event.target.closest('#entryNameInput');
+    if (nameInput) {
+      state.profileDraftName = String(nameInput.value || '');
     }
   });
 }
@@ -3105,7 +3278,7 @@ function renderScoringModal() {
               </div>
               <div class="scoring-timeline-step">
                 <strong>3. Se mueve la tabla general</strong>
-                <p>El leaderboard muestra el acumulado actualizado de todos los usuarios.</p>
+                <p>El leaderboard muestra el acumulado actualizado de todas las entradas activas.</p>
               </div>
             </div>
           </section>
@@ -3160,7 +3333,11 @@ function renderPredictionsHelpModal() {
 }
 
 function renderProfileModal() {
-  const selectedPreset = String(state.user?.avatarPreset || '');
+  const activeEntry = getActiveEntry();
+  const selectedPreset = String(state.profileDraftPreset || activeEntry?.avatarPreset || '');
+  const entryName = String(state.profileDraftName || activeEntry?.name || '');
+  const entryAvatarImage = state.profileDraftImageRemoved ? '' : (state.profileDraftImage || activeEntry?.avatarImage || '');
+  const entries = state.entries || [];
   return `
     <div class="modal-shell hidden" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
       <div class="modal-backdrop" data-close-profile></div>
@@ -3168,17 +3345,24 @@ function renderProfileModal() {
         <div class="modal-head">
           <div>
             <p class="eyebrow">Tu perfil</p>
-            <h3 id="profileModalTitle">Avatar y foto</h3>
+            <h3 id="profileModalTitle">Entradas y avatar</h3>
           </div>
           <button class="modal-close" type="button" aria-label="Cerrar" data-close-profile>&times;</button>
         </div>
         <div class="modal-body scoring-modal-body">
           <section class="profile-card">
-            <div class="profile-preview">${getAvatarMarkup({ ...state.user, avatarImage: state.profileDraftImage || state.user?.avatarImage || '' }, 'profile-avatar-preview')}</div>
+            <div class="profile-preview">${getAvatarMarkup({ username: entryName || state.user?.username || 'PM', avatarPreset: selectedPreset, avatarImage: entryAvatarImage }, 'profile-avatar-preview')}</div>
             <div class="profile-copy">
-              <strong>${escapeHtml(state.user?.username || '')}</strong>
-              <span>Sube una foto o usa un avatar predefinido.</span>
+              <strong>${escapeHtml(entryName || 'Entrada activa')}</strong>
+              <span>${escapeHtml(state.user?.username || '')} · ${entries.length} entrada${entries.length === 1 ? '' : 's'} registradas</span>
             </div>
+          </section>
+          <section class="profile-section">
+            <h4>Nombre de la entrada</h4>
+            <label class="profile-field">
+              <span>Nombre visible</span>
+              <input id="entryNameInput" type="text" maxlength="32" value="${escapeHtml(entryName)}" placeholder="Ej. Juan A" />
+            </label>
           </section>
           <section class="profile-section">
             <h4>Avatares</h4>
@@ -3219,10 +3403,49 @@ function renderProfileModal() {
               <input id="profileImageInput" class="profile-upload-input" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif" />
             </label>
             <div class="profile-actions">
-              <button class="secondary-button" type="button" data-remove-profile-photo ${state.profileDraftImage || state.user?.avatarImage ? '' : 'disabled'}>Quitar foto</button>
+              <button class="secondary-button" type="button" data-remove-profile-photo ${state.profileDraftImageRemoved ? '' : (state.profileDraftImage || activeEntry?.avatarImage ? '' : 'disabled')}>Quitar foto</button>
             </div>
           </section>
-          <button class="primary-button" type="button" data-save-profile>Guardar perfil</button>
+          <button class="primary-button" type="button" data-save-profile>Guardar entrada</button>
+          <section class="profile-section profile-section-entries">
+            <div class="profile-section-head">
+              <h4>Tus entradas</h4>
+              <span>${entries.length}</span>
+            </div>
+            <div class="entry-switcher">
+              ${entries.map((entry) => `
+                <div class="entry-switcher-item ${String(entry.id) === String(state.activeEntryId) ? 'is-active' : ''}">
+                  <button class="entry-switcher-main" type="button" data-switch-entry="${escapeHtml(entry.id)}">
+                  <span class="entry-switcher-copy">
+                    <strong>${escapeHtml(entry.name)}</strong>
+                    <span>${String(entry.id) === String(state.activeEntryId) ? 'Activa' : 'Cambiar a esta entrada'}</span>
+                  </span>
+                  <span class="entry-switcher-points">${Number(entry.totalPoints || 0)} pts</span>
+                  </button>
+                  <button
+                    class="entry-switcher-delete"
+                    type="button"
+                    data-delete-entry="${escapeHtml(entry.id)}"
+                    ${entries.length <= 1 ? 'disabled' : ''}
+                    title="Eliminar entrada"
+                    aria-label="Eliminar entrada ${escapeHtml(entry.name)}"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+          <section class="profile-section">
+            <h4>Nueva entrada</h4>
+            <label class="profile-field">
+              <span>Nombre opcional</span>
+              <input id="newEntryNameInput" type="text" maxlength="32" placeholder="Ej. Juan B" />
+            </label>
+            <div class="profile-actions">
+              <button class="secondary-button" type="button" data-create-entry>Crear entrada</button>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -3281,7 +3504,7 @@ function renderPaymentAdminModal() {
             <section class="payment-admin-list-panel">
               <div class="payment-admin-list-head">
                 <div>
-                  <p class="leaderboard-panel-kicker">Lista de usuarios</p>
+                  <p class="leaderboard-panel-kicker">Lista de cuentas</p>
                   <h4>Marca el estado de pago</h4>
                 </div>
                 <button class="secondary-button" type="button" data-refresh-payment-admin>Recargar</button>
@@ -3304,7 +3527,7 @@ function renderPaymentAdminModal() {
                       />
                     </span>
                   </label>
-                `).join('') : '<p class="empty-state">No hay usuarios registrados.</p>'}
+                `).join('') : '<p class="empty-state">No hay cuentas registradas.</p>'}
               </div>
             </section>
           </div>
@@ -3447,26 +3670,16 @@ function ensureProfileModal() {
 function syncProfileModal() {
   const modal = document.getElementById('profileModal');
   if (!modal) return;
-  const preview = modal.querySelector('.profile-preview');
-  const removeButton = modal.querySelector('[data-remove-profile-photo]');
-  const selectedPreset = modal.querySelector('input[name="avatarPreset"]:checked')?.value || '';
-  if (preview) {
-    preview.innerHTML = getAvatarMarkup(
-      { ...state.user, avatarPreset: selectedPreset, avatarImage: state.profileDraftImage || '' },
-      'profile-avatar-preview'
-    );
+  const wasOpen = !modal.classList.contains('hidden');
+  modal.outerHTML = renderProfileModal();
+  const nextModal = document.getElementById('profileModal');
+  if (!nextModal) return;
+
+  if (wasOpen) {
+    nextModal.classList.remove('hidden');
+    nextModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
   }
-  modal.querySelectorAll('.avatar-preset-option').forEach((item) => {
-    const input = item.querySelector('input[name="avatarPreset"]');
-    item.classList.toggle('is-selected', input?.checked);
-  });
-  modal.querySelectorAll('[data-avatar-section]').forEach((tab) => {
-    tab.classList.toggle('is-active', tab.dataset.avatarSection === state.activeAvatarSection);
-  });
-  modal.querySelectorAll('[data-avatar-panel]').forEach((panel) => {
-    panel.classList.toggle('hidden', panel.dataset.avatarPanel !== state.activeAvatarSection);
-  });
-  if (removeButton) removeButton.disabled = !(state.profileDraftImage || state.user?.avatarImage);
 }
 
 async function fetchAdminSettings({ silent = false } = {}) {
@@ -3529,7 +3742,7 @@ function syncPaymentAdminModal() {
           </span>
         </label>
       `).join('')
-    : '<p class="empty-state">No hay usuarios registrados.</p>';
+    : '<p class="empty-state">No hay cuentas registradas.</p>';
 
   const summary = getPaymentAdminSummary();
   const totalNode = modal.querySelector('[data-payment-admin-total]');
@@ -3635,7 +3848,11 @@ async function saveAdminWorstTeam() {
 }
 
 async function openProfileModal() {
-  state.profileDraftImage = state.user?.avatarImage || '';
+  const activeEntry = getActiveEntry();
+  state.profileDraftName = activeEntry?.name || '';
+  state.profileDraftPreset = activeEntry?.avatarPreset || '';
+  state.profileDraftImageRemoved = false;
+  state.profileDraftImage = activeEntry?.avatarImage || '';
   ensureProfileModal();
   const modal = document.getElementById('profileModal');
   if (!modal) return;
@@ -3663,25 +3880,80 @@ function readImageAsDataUrl(file) {
 async function saveProfileSettings() {
   const modal = document.getElementById('profileModal');
   if (!modal) return;
-  const preset = modal.querySelector('input[name="avatarPreset"]:checked')?.value || '';
-  const payload = await apiFetch('/auth/me', {
+  const payload = await apiFetch('/entries/active', {
     method: 'PATCH',
     body: JSON.stringify({
-      avatarPreset: preset,
-      avatarImage: state.profileDraftImage || ''
+      name: String(state.profileDraftName || '').trim(),
+      avatarPreset: String(state.profileDraftPreset || '').trim(),
+      avatarImage: state.profileDraftImageRemoved ? '' : (state.profileDraftImage || '')
     })
   });
-  state.user = payload.user;
-  localStorage.setItem('pm_user', JSON.stringify(payload.user));
+  persistEntriesState(payload.entries || [], payload.activeEntryId || '', payload.activeEntry || null);
+  syncEntryDependentState();
   renderCurrentUserAvatar();
   void refreshCurrentUserRankBadge({ silent: true });
   closeProfileModal();
-  toast('Perfil actualizado.');
+  toast('Entrada actualizada.');
   if (document.getElementById('leaderboardList')) {
     const list = document.getElementById('leaderboardList');
     const emptyState = document.getElementById('emptyLeaderboard');
     if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
   }
+}
+
+async function createEntryFromModal() {
+  const modal = document.getElementById('profileModal');
+  if (!modal) return;
+  const input = modal.querySelector('#newEntryNameInput');
+  const payload = await apiFetch('/entries', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: String(input?.value || '').trim()
+    })
+  });
+
+  persistEntriesState(payload.entries || [], payload.activeEntryId || '', payload.activeEntry || null);
+  syncEntryDependentState();
+  renderCurrentUserAvatar();
+  syncProfileModal();
+  void refreshCurrentUserRankBadge({ silent: true });
+  toast(payload.message || 'Entrada creada.');
+  if (document.getElementById('leaderboardList')) {
+    const list = document.getElementById('leaderboardList');
+    const emptyState = document.getElementById('emptyLeaderboard');
+    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+  }
+  await loadMatches();
+}
+
+async function deleteEntryFromModal(entryId) {
+  const modal = document.getElementById('profileModal');
+  if (!modal) return;
+
+  const entry = state.entries.find((item) => String(item.id) === String(entryId));
+  if (!entry) return;
+
+  const confirmed = window.confirm(
+    `Vas a eliminar "${entry.name}". Esto borrará también sus predicciones. Continuar?`
+  );
+  if (!confirmed) return;
+
+  const payload = await apiFetch(`/entries/${encodeURIComponent(String(entryId))}`, {
+    method: 'DELETE'
+  });
+
+  persistEntriesState(payload.entries || [], payload.activeEntryId || '', payload.activeEntry || null);
+  syncEntryDependentState();
+  renderCurrentUserAvatar();
+  syncProfileModal();
+  void refreshCurrentUserRankBadge({ silent: true });
+  toast(payload.message || 'Entrada eliminada.');
+  if (document.getElementById('leaderboardList')) {
+    const list = document.getElementById('leaderboardList');
+    const emptyState = document.getElementById('emptyLeaderboard');
+    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+  }
+  await loadMatches();
 }
 
 function ensureScoringModal() {
@@ -3920,11 +4192,14 @@ async function saveWorstTeamPrediction() {
       draft: payload.predictedWorstTeam || '',
       isOpen: false
     };
-    state.user = {
-      ...(state.user || {}),
-      predictedWorstTeam: payload.predictedWorstTeam || ''
-    };
-    localStorage.setItem('pm_user', JSON.stringify(state.user));
+    state.entries = state.entries.map((entry) => (
+      String(entry.id) === String(state.activeEntryId)
+        ? { ...entry, predictedWorstTeam: payload.predictedWorstTeam || '' }
+        : entry
+    ));
+    state.activeEntry = state.entries.find((entry) => String(entry.id) === String(state.activeEntryId)) || state.activeEntry;
+    localStorage.setItem('pm_entries', JSON.stringify(state.entries));
+    syncEntryDependentState();
     toast(payload.predictedWorstTeam ? 'Peor equipo guardado.' : 'Seleccion eliminada.');
   } catch (error) {
     toast(error.message || 'No se pudo guardar el peor equipo.', 'error');
@@ -3958,11 +4233,16 @@ async function loadMatches() {
       draft: worstTeamPrediction.predictedWorstTeam || '',
       isOpen: false
     };
-    state.user = {
-      ...(state.user || {}),
-      predictedWorstTeam: worstTeamPrediction.predictedWorstTeam || ''
-    };
-    localStorage.setItem('pm_user', JSON.stringify(state.user));
+    if (state.activeEntryId) {
+      state.entries = state.entries.map((entry) => (
+        String(entry.id) === String(state.activeEntryId)
+          ? { ...entry, predictedWorstTeam: worstTeamPrediction.predictedWorstTeam || '' }
+          : entry
+      ));
+      state.activeEntry = state.entries.find((entry) => String(entry.id) === String(state.activeEntryId)) || state.activeEntry;
+      localStorage.setItem('pm_entries', JSON.stringify(state.entries));
+    }
+    syncEntryDependentState();
     syncPredictionDrafts(matches);
     renderFixture(state.matches, state.myPredictions);
   } catch (error) {
@@ -3997,6 +4277,9 @@ async function loadMatches() {
 async function initDashboardPage() {
   if (!document.getElementById('groupsBoard')) return;
   if (!(await requireAuth())) return;
+  try {
+    await syncEntriesFromServer({ silent: true });
+  } catch {}
 
   if (state.user?.isAdmin) {
     try {
@@ -4356,8 +4639,8 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
             <div class="leaderboard-spotlight-head">
               ${getAvatarMarkup(row, 'leaderboard-avatar leaderboard-avatar-large')}
               <div class="leaderboard-spotlight-copy">
-                <p>${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}${renderPaidBadge(row.isPaid)}</p>
-                <span>${gap === 0 ? 'Marca el ritmo del torneo' : `${gap} pts del lider`}</span>
+                <p>${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu entrada' : ''}${renderPaidBadge(row.isPaid)}</p>
+                <span>${escapeHtml(row.ownerUsername || 'Cuenta')}${gap === 0 ? ' · marca el ritmo del torneo' : ` · ${gap} pts del lider`}</span>
               </div>
               ${crown}
             </div>
@@ -4391,9 +4674,9 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         <div class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}" style="animation-delay:${index * 45}ms">
           <div class="rank-number">${String(row.rank).padStart(2, '0')}</div>
           <div class="leaderboard-user">
-            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu' : ''}${renderPaidBadge(row.isPaid)}</div>
+            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu entrada' : ''}${renderPaidBadge(row.isPaid)}</div>
             <div class="leaderboard-meta">
-              <span>${row.rank <= 3 ? 'Zona de podio' : `${Math.max((leader?.points || row.points) - row.points, 0)} pts del lider`}</span>
+              <span>${escapeHtml(row.ownerUsername || 'Cuenta')}</span>
               <span>#${row.rank}</span>
             </div>
             <div class="points-track"><span style="width:${percent}%"></span></div>
@@ -4431,6 +4714,9 @@ async function initLeaderboardPage() {
   const emptyState = document.getElementById('emptyLeaderboard');
   if (!list) return;
   if (!(await requireAuth())) return;
+  try {
+    await syncEntriesFromServer({ silent: true });
+  } catch {}
 
   if (state.user?.isAdmin) {
     try {

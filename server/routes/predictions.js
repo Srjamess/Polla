@@ -4,6 +4,7 @@ const Prediction = require('../models/Prediction');
 const { authenticate } = require('../middleware/auth');
 const { recalculateAllScores, calculateMatchPoints } = require('../utils/scoring');
 const { getAppSettings } = require('../utils/appSettings');
+const { ensureUserEntries } = require('../utils/entries');
 const {
   buildPredictionMap,
   buildResolutionContext,
@@ -82,10 +83,18 @@ async function ensureMatchCanBePredicted(match, settings) {
   return null;
 }
 
-async function buildPredictionSummary(userId, predictedWorstTeam = '') {
+async function resolveEntryContext(req) {
+  const { entries, activeEntry } = await ensureUserEntries(req.user, req.header('x-entry-id'));
+  return {
+    entries,
+    activeEntry
+  };
+}
+
+async function buildPredictionSummary(entryId, predictedWorstTeam = '') {
   const [matches, predictions, settings] = await Promise.all([
     Match.find(),
-    Prediction.find({ user: userId }),
+    Prediction.find({ entry: entryId }),
     getAppSettings()
   ]);
 
@@ -115,7 +124,12 @@ async function buildPredictionSummary(userId, predictedWorstTeam = '') {
 
 router.get('/me', async (req, res) => {
   try {
-    const predictions = await Prediction.find({ user: req.user._id })
+    const { activeEntry } = await resolveEntryContext(req);
+    if (!activeEntry) {
+      return res.json([]);
+    }
+
+    const predictions = await Prediction.find({ entry: activeEntry._id })
       .populate('match')
       .sort({ createdAt: -1 });
 
@@ -155,7 +169,8 @@ router.get('/me', async (req, res) => {
 
 router.get('/summary', async (req, res) => {
   try {
-    const summary = await buildPredictionSummary(req.user._id, req.user.predictedWorstTeam || '');
+    const { activeEntry } = await resolveEntryContext(req);
+    const summary = await buildPredictionSummary(activeEntry?._id || null, activeEntry?.predictedWorstTeam || '');
     res.json(summary);
   } catch (error) {
     res.status(500).json({ message: 'Could not fetch prediction summary.' });
@@ -164,13 +179,14 @@ router.get('/summary', async (req, res) => {
 
 router.get('/worst-team', async (req, res) => {
   try {
+    const { activeEntry } = await resolveEntryContext(req);
     const settings = await getAppSettings();
     const matches = await Match.find().select('teamA teamB');
     const teams = getUniqueTeams(matches);
     const locked = Boolean(settings.predictionsLocked);
 
     res.json({
-      predictedWorstTeam: req.user.predictedWorstTeam || '',
+      predictedWorstTeam: activeEntry?.predictedWorstTeam || '',
       teams,
       locked
     });
@@ -181,6 +197,7 @@ router.get('/worst-team', async (req, res) => {
 
 router.put('/worst-team', async (req, res) => {
   try {
+    const { activeEntry } = await resolveEntryContext(req);
     const settings = await getAppSettings();
     if (settings.predictionsLocked) {
       return res.status(403).json({ message: 'Worst team prediction is locked.' });
@@ -194,11 +211,12 @@ router.put('/worst-team', async (req, res) => {
       return res.status(400).json({ message: 'Select a valid team.' });
     }
 
-    req.user.predictedWorstTeam = predictedWorstTeam;
-    await req.user.save();
+    activeEntry.predictedWorstTeam = predictedWorstTeam;
+    await activeEntry.save();
+    await recalculateAllScores();
 
     res.json({
-      predictedWorstTeam: req.user.predictedWorstTeam || '',
+      predictedWorstTeam: activeEntry.predictedWorstTeam || '',
       teams,
       locked: false
     });
@@ -209,6 +227,7 @@ router.put('/worst-team', async (req, res) => {
 
 router.post('/batch', async (req, res) => {
   try {
+    const { activeEntry } = await resolveEntryContext(req);
     const settings = await getAppSettings();
     const inputPredictions = Array.isArray(req.body?.predictions) ? req.body.predictions : [];
 
@@ -244,7 +263,7 @@ router.post('/batch', async (req, res) => {
 
       bulkOperations.push({
         updateOne: {
-          filter: { user: req.user._id, match: match._id },
+          filter: { entry: activeEntry._id, match: match._id },
           update: {
             $set: {
               ...build.update,
@@ -253,6 +272,7 @@ router.post('/batch', async (req, res) => {
             },
             $setOnInsert: {
               user: req.user._id,
+              entry: activeEntry._id,
               match: match._id
             }
           },
@@ -271,6 +291,7 @@ router.post('/batch', async (req, res) => {
 
 router.post('/:matchId', async (req, res) => {
   try {
+    const { activeEntry } = await resolveEntryContext(req);
     const settings = await getAppSettings();
     const match = await Match.findById(req.params.matchId);
     const blockedReason = await ensureMatchCanBePredicted(match, settings);
@@ -284,7 +305,7 @@ router.post('/:matchId', async (req, res) => {
     }
 
     const prediction = await Prediction.findOneAndUpdate(
-      { user: req.user._id, match: match._id },
+      { entry: activeEntry._id, match: match._id },
       {
         $set: {
           ...build.update,
@@ -293,6 +314,7 @@ router.post('/:matchId', async (req, res) => {
         },
         $setOnInsert: {
           user: req.user._id,
+          entry: activeEntry._id,
           match: match._id
         }
       },

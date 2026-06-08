@@ -1,6 +1,12 @@
 const express = require('express');
 const User = require('../models/User');
 const { authenticate, verifyFirebaseToken } = require('../middleware/auth');
+const { recalculateAllScores } = require('../utils/scoring');
+const {
+  ensureUserEntries,
+  serializeEntries,
+  serializeEntry
+} = require('../utils/entries');
 
 const router = express.Router();
 
@@ -156,7 +162,18 @@ router.post('/register', async (req, res) => {
       firebaseUid: decodedToken.uid
     });
 
-    res.status(201).json({ token: req.body.idToken, user: publicUser(user) });
+    const { entries, activeEntry, migratedLegacyPredictions } = await ensureUserEntries(user);
+    if (migratedLegacyPredictions) {
+      await recalculateAllScores();
+    }
+
+    res.status(201).json({
+      token: req.body.idToken,
+      user: publicUser(user),
+      entries: serializeEntries(entries, activeEntry?._id || null),
+      activeEntryId: activeEntry ? String(activeEntry._id) : '',
+      activeEntry: serializeEntry(activeEntry, activeEntry?._id || null)
+    });
   } catch (error) {
     res.status(500).json({ message: 'Registration failed.' });
   }
@@ -183,7 +200,18 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    res.json({ token: req.body.idToken, user: publicUser(user) });
+    const { entries, activeEntry, migratedLegacyPredictions } = await ensureUserEntries(user);
+    if (migratedLegacyPredictions) {
+      await recalculateAllScores();
+    }
+
+    res.json({
+      token: req.body.idToken,
+      user: publicUser(user),
+      entries: serializeEntries(entries, activeEntry?._id || null),
+      activeEntryId: activeEntry ? String(activeEntry._id) : '',
+      activeEntry: serializeEntry(activeEntry, activeEntry?._id || null)
+    });
   } catch (error) {
     res.status(500).json({ message: 'Login failed.' });
   }

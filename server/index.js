@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
+const entryRoutes = require('./routes/entries');
 const matchRoutes = require('./routes/matches');
 const predictionRoutes = require('./routes/predictions');
 const leaderboardRoutes = require('./routes/leaderboard');
@@ -57,6 +58,7 @@ app.use(express.json({ limit: '2mb' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/entries', entryRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/predictions', predictionRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
@@ -69,6 +71,16 @@ app.get('*', (req, res) => {
 
 mongoose
   .connect(process.env.MONGO_URI)
+  .then(async () => {
+    try {
+      await Promise.all([
+        mongoose.model('Prediction').syncIndexes(),
+        mongoose.model('Entry').syncIndexes()
+      ]);
+    } catch (error) {
+      console.warn(`Index sync skipped: ${error.message}`);
+    }
+  })
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Polla Mundialista running on http://localhost:${PORT}`);

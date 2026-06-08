@@ -4,6 +4,7 @@ const Prediction = require('../models/Prediction');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { recalculateAllScores } = require('../utils/scoring');
 const { getAppSettings } = require('../utils/appSettings');
+const { ensureUserEntries } = require('../utils/entries');
 const {
   buildPredictionMap,
   buildResolutionContext,
@@ -28,7 +29,8 @@ router.get('/', async (req, res) => {
   try {
     const settings = await getAppSettings();
     const matches = await Match.find();
-    const predictions = await Prediction.find({ user: req.user._id });
+    const { activeEntry } = await ensureUserEntries(req.user, req.header('x-entry-id'));
+    const predictions = await Prediction.find({ entry: activeEntry?._id || null });
     const predictionByMatch = new Map(
       predictions.map((prediction) => [prediction.match.toString(), prediction])
     );

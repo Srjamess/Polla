@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const mongoose = require('mongoose');
 const Match = require('../server/models/Match');
+const Entry = require('../server/models/Entry');
 const Prediction = require('../server/models/Prediction');
 const User = require('../server/models/User');
 
@@ -26,12 +27,13 @@ async function resetTestData() {
   );
 
   const predictionDelete = await Prediction.deleteMany({});
+  const entryUpdate = await Entry.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '' } });
   const userUpdate = await User.updateMany({}, { $set: { totalPoints: 0 } });
 
   await mongoose.disconnect();
 
   console.log(
-    `Reset complete. Matches updated: ${matchUpdate.modifiedCount}. Predictions deleted: ${predictionDelete.deletedCount}. Users reset: ${userUpdate.modifiedCount}.`
+    `Reset complete. Matches updated: ${matchUpdate.modifiedCount}. Predictions deleted: ${predictionDelete.deletedCount}. Entries reset: ${entryUpdate.modifiedCount}. Users reset: ${userUpdate.modifiedCount}.`
   );
 }
 
