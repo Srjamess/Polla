@@ -27,8 +27,8 @@ async function resetTestData() {
   );
 
   const predictionDelete = await Prediction.deleteMany({});
-  const entryUpdate = await Entry.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '' } });
-  const userUpdate = await User.updateMany({}, { $set: { totalPoints: 0 } });
+  const entryUpdate = await Entry.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '', isPaid: false } });
+  const userUpdate = await User.updateMany({}, { $set: { totalPoints: 0, isPaid: false } });
 
   await mongoose.disconnect();
 

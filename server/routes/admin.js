@@ -38,25 +38,25 @@ router.get('/settings', async (req, res) => {
 
 router.get('/users', async (req, res) => {
   try {
-    const users = await User.find()
-      .select('username email isAdmin isPaid avatarPreset avatarImage totalPoints createdAt')
-      .sort({ username: 1 });
+    const entries = await Entry.find()
+      .populate('user', 'username email')
+      .select('user name isPaid totalPoints createdAt')
+      .sort({ createdAt: 1, name: 1 });
 
     res.json({
-      users: users.map((user) => ({
-        id: user._id,
-        username: user.username,
-        email: user.email || '',
-        isAdmin: Boolean(user.isAdmin),
-        isPaid: Boolean(user.isPaid),
-        avatarPreset: user.avatarPreset || '',
-        avatarImage: user.avatarImage || '',
-        totalPoints: Number(user.totalPoints || 0),
-        createdAt: user.createdAt
+      entries: entries.map((entry) => ({
+        id: entry._id,
+        userId: entry.user?._id || null,
+        username: entry.name,
+        ownerUsername: entry.user?.username || '',
+        email: entry.user?.email || '',
+        isPaid: Boolean(entry.isPaid),
+        totalPoints: Number(entry.totalPoints || 0),
+        createdAt: entry.createdAt
       }))
     });
   } catch (error) {
-    res.status(500).json({ message: 'No se pudo cargar la lista de usuarios.' });
+    res.status(500).json({ message: 'No se pudo cargar la lista de entradas.' });
   }
 });
 
@@ -66,20 +66,21 @@ router.patch('/users/:id/payment', async (req, res) => {
       return res.status(400).json({ message: 'El estado de pago es obligatorio.' });
     }
 
-    const user = await User.findById(req.params.id);
-    if (!user) {
-      return res.status(404).json({ message: 'Usuario no encontrado.' });
+    const entry = await Entry.findById(req.params.id).populate('user', 'username email');
+    if (!entry) {
+      return res.status(404).json({ message: 'Entrada no encontrada.' });
     }
 
-    user.isPaid = req.body.isPaid;
-    await user.save();
+    entry.isPaid = req.body.isPaid;
+    await entry.save();
 
     res.json({
-      message: user.isPaid ? 'Usuario marcado como pagador.' : 'Usuario marcado como no pagador.',
-      user: {
-        id: user._id,
-        username: user.username,
-        isPaid: Boolean(user.isPaid)
+      message: entry.isPaid ? 'Entrada marcada como pagada.' : 'Entrada marcada como pendiente.',
+      entry: {
+        id: entry._id,
+        username: entry.name,
+        ownerUsername: entry.user?.username || '',
+        isPaid: Boolean(entry.isPaid)
       }
     });
   } catch (error) {
@@ -149,8 +150,8 @@ router.post('/reset-pruebas', async (req, res) => {
     );
 
     const predictionDelete = await Prediction.deleteMany({});
-    const entryUpdate = await Entry.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '' } });
-    const userUpdate = await User.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '' } });
+    const entryUpdate = await Entry.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '', isPaid: false } });
+    const userUpdate = await User.updateMany({}, { $set: { totalPoints: 0, predictedWorstTeam: '', isPaid: false } });
     const settings = await getAppSettings();
     settings.actualWorstTeam = '';
     await settings.save();

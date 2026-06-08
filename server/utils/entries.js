@@ -47,13 +47,21 @@ async function ensureUserEntries(user, requestedEntryId = null) {
       name: await buildUniqueEntryName(user._id, user.username || 'Entrada'),
       avatarPreset: user.avatarPreset || '',
       avatarImage: user.avatarImage || '',
-      predictedWorstTeam: user.predictedWorstTeam || ''
+      predictedWorstTeam: user.predictedWorstTeam || '',
+      isPaid: Boolean(user.isPaid)
     });
 
     entries = [defaultEntry];
   } else if (user.predictedWorstTeam && !entries.some((entry) => String(entry.predictedWorstTeam || '').trim())) {
     const firstEntry = entries[0];
     firstEntry.predictedWorstTeam = String(user.predictedWorstTeam || '').trim();
+    await firstEntry.save();
+    entries = await Entry.find({ user: user._id }).sort({ createdAt: 1, _id: 1 });
+  }
+
+  if (user.isPaid && entries.length && !entries.some((entry) => entry.isPaid)) {
+    const firstEntry = entries[0];
+    firstEntry.isPaid = true;
     await firstEntry.save();
     entries = await Entry.find({ user: user._id }).sort({ createdAt: 1, _id: 1 });
   }

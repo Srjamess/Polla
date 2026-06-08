@@ -12,8 +12,8 @@ router.get('/', async (req, res) => {
     const { activeEntry } = await ensureUserEntries(req.user, req.header('x-entry-id'));
 
     const leaderboardEntries = await Entry.find()
-      .populate('user', 'username isPaid')
-      .select('user name avatarPreset avatarImage totalPoints createdAt')
+      .populate('user', 'username')
+      .select('user name avatarPreset avatarImage isPaid totalPoints createdAt')
       .sort({ totalPoints: -1, name: 1, createdAt: 1 });
 
     const leaderboard = leaderboardEntries.map((entry, index) => ({
@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
       ownerUsername: entry.user?.username || '',
       avatarPreset: entry.avatarPreset || '',
       avatarImage: entry.avatarImage || '',
-      isPaid: Boolean(entry.user?.isPaid),
+      isPaid: Boolean(entry.isPaid),
       points: Number(entry.totalPoints || 0),
       isCurrentUser: activeEntry ? String(entry._id) === String(activeEntry._id) : false
     }));

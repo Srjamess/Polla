@@ -2756,12 +2756,12 @@ function updateAdminResetVisibility() {
 }
 
 function getPaymentAdminSummary() {
-  const users = state.adminUsers || [];
-  const paidCount = users.filter((user) => user.isPaid).length;
-  const unpaidCount = Math.max(users.length - paidCount, 0);
+  const entries = state.adminUsers || [];
+  const paidCount = entries.filter((entry) => entry.isPaid).length;
+  const unpaidCount = Math.max(entries.length - paidCount, 0);
 
   return {
-    total: users.length,
+    total: entries.length,
     paidCount,
     unpaidCount
   };
@@ -2780,7 +2780,7 @@ function renderAdminPanel() {
         <p class="eyebrow">Panel de administracion</p>
         <h2>Control de pagos</h2>
         <p class="admin-note">
-          El fixture oficial ya esta cargado. Desde aqui solo marcas quien pago la apuesta; no se editan usuarios ni puntos.
+          El fixture oficial ya esta cargado. Desde aqui solo marcas que entrada pago la apuesta; no se editan cuentas ni puntos.
         </p>
       </div>
       <div class="admin-dashboard-stats" aria-label="Resumen de pagos">
@@ -3453,7 +3453,7 @@ function renderProfileModal() {
 }
 
 function renderPaymentAdminModal() {
-  const users = state.adminUsers || [];
+  const entries = state.adminUsers || [];
   const summary = getPaymentAdminSummary();
 
   return `
@@ -3473,15 +3473,15 @@ function renderPaymentAdminModal() {
               <p class="eyebrow">Resumen rapido</p>
               <h4>Control simple de pagos</h4>
               <p>
-                Marca solo si cada jugador ya pago. El sistema no cambia nombre, avatar, puntos ni rol.
+                Marca solo si cada entrada ya pago. El sistema no cambia nombre, avatar, puntos ni cuenta.
               </p>
               <div class="payment-admin-mini-stats">
                 <article>
-                  <span>Usuarios</span>
+                  <span>Entradas</span>
                   <strong data-payment-admin-total>${summary.total}</strong>
                 </article>
                 <article class="is-paid">
-                  <span>Pagados</span>
+                  <span>Pagadas</span>
                   <strong data-payment-admin-paid>${summary.paidCount}</strong>
                 </article>
                 <article class="is-pending">
@@ -3504,26 +3504,26 @@ function renderPaymentAdminModal() {
             <section class="payment-admin-list-panel">
               <div class="payment-admin-list-head">
                 <div>
-                  <p class="leaderboard-panel-kicker">Lista de cuentas</p>
+                  <p class="leaderboard-panel-kicker">Lista de entradas</p>
                   <h4>Marca el estado de pago</h4>
                 </div>
                 <button class="secondary-button" type="button" data-refresh-payment-admin>Recargar</button>
               </div>
               <div class="admin-users-list">
-                ${users.length ? users.map((user) => `
-                  <label class="admin-user-row ${user.isPaid ? 'is-paid' : ''}">
+                ${entries.length ? entries.map((entry) => `
+                  <label class="admin-user-row ${entry.isPaid ? 'is-paid' : ''}">
                     <span class="admin-user-main">
-                      <span class="admin-user-name">${escapeHtml(user.username)}</span>
-                      <span class="admin-user-meta">${escapeHtml(user.email || 'Sin email')}</span>
+                      <span class="admin-user-name">${escapeHtml(entry.username)}</span>
+                      <span class="admin-user-meta">${escapeHtml(entry.ownerUsername || entry.email || 'Sin dueño')}</span>
                     </span>
                     <span class="admin-user-state">
-                      <span class="admin-user-state-badge ${user.isPaid ? 'is-paid' : ''}" aria-label="${user.isPaid ? 'Pagó' : 'Pendiente'}">${user.isPaid ? '💰' : 'Pendiente'}</span>
+                      <span class="admin-user-state-badge ${entry.isPaid ? 'is-paid' : ''}" aria-label="${entry.isPaid ? 'Pagó' : 'Pendiente'}">${entry.isPaid ? '💰' : 'Pendiente'}</span>
                       <input
                         type="checkbox"
                         data-admin-paid-toggle
-                        data-user-id="${escapeHtml(String(user.id))}"
-                        ${user.isPaid ? 'checked' : ''}
-                        aria-label="Marcar pago de ${escapeHtml(user.username)}"
+                        data-entry-id="${escapeHtml(String(entry.id))}"
+                        ${entry.isPaid ? 'checked' : ''}
+                        aria-label="Marcar pago de ${escapeHtml(entry.username)}"
                       />
                     </span>
                   </label>
@@ -3702,11 +3702,11 @@ async function fetchAdminUsers({ silent = false } = {}) {
 
   try {
     const payload = await apiFetch('/admin/users');
-    state.adminUsers = payload.users || [];
+    state.adminUsers = payload.entries || [];
     return state.adminUsers;
   } catch (error) {
     if (!silent) {
-      toast(error.message || 'No se pudo cargar la lista de usuarios.', 'error');
+      toast(error.message || 'No se pudo cargar la lista de entradas.', 'error');
     }
     throw error;
   }
@@ -3724,20 +3724,20 @@ function syncPaymentAdminModal() {
   const list = modal.querySelector('.admin-users-list');
   if (!list) return;
   list.innerHTML = state.adminUsers.length
-    ? state.adminUsers.map((user) => `
-        <label class="admin-user-row ${user.isPaid ? 'is-paid' : ''}">
+    ? state.adminUsers.map((entry) => `
+        <label class="admin-user-row ${entry.isPaid ? 'is-paid' : ''}">
           <span class="admin-user-main">
-            <span class="admin-user-name">${escapeHtml(user.username)}</span>
-            <span class="admin-user-meta">${escapeHtml(user.email || 'Sin email')}</span>
+            <span class="admin-user-name">${escapeHtml(entry.username)}</span>
+            <span class="admin-user-meta">${escapeHtml(entry.ownerUsername || entry.email || 'Sin dueño')}</span>
           </span>
           <span class="admin-user-state">
-            <span class="admin-user-state-badge ${user.isPaid ? 'is-paid' : ''}" aria-label="${user.isPaid ? 'Pagó' : 'Pendiente'}">${user.isPaid ? '💰' : 'Pendiente'}</span>
+            <span class="admin-user-state-badge ${entry.isPaid ? 'is-paid' : ''}" aria-label="${entry.isPaid ? 'Pagó' : 'Pendiente'}">${entry.isPaid ? '💰' : 'Pendiente'}</span>
             <input
               type="checkbox"
               data-admin-paid-toggle
-              data-user-id="${escapeHtml(String(user.id))}"
-              ${user.isPaid ? 'checked' : ''}
-              aria-label="Marcar pago de ${escapeHtml(user.username)}"
+              data-entry-id="${escapeHtml(String(entry.id))}"
+              ${entry.isPaid ? 'checked' : ''}
+              aria-label="Marcar pago de ${escapeHtml(entry.username)}"
             />
           </span>
         </label>
@@ -3776,17 +3776,17 @@ function closePaymentAdminModal() {
   document.body.classList.remove('modal-open');
 }
 
-async function updateUserPaymentStatus(userId, isPaid) {
-  if (!state.user?.isAdmin || !userId) return;
+async function updateEntryPaymentStatus(entryId, isPaid) {
+  if (!state.user?.isAdmin || !entryId) return;
 
-  const payload = await apiFetch(`/admin/users/${encodeURIComponent(userId)}/payment`, {
+  const payload = await apiFetch(`/admin/users/${encodeURIComponent(entryId)}/payment`, {
     method: 'PATCH',
     body: JSON.stringify({ isPaid })
   });
 
   state.adminUsers = state.adminUsers.map((user) => (
-    String(user.id) === String(payload.user.id)
-      ? { ...user, isPaid: Boolean(payload.user.isPaid) }
+    String(user.id) === String((payload.entry || payload.user || {}).id)
+      ? { ...user, isPaid: Boolean((payload.entry || payload.user || {}).isPaid) }
       : user
   ));
   syncPaymentAdminModal();
@@ -4447,7 +4447,7 @@ async function initDashboardPage() {
 
     try {
       paidToggle.disabled = true;
-      await updateUserPaymentStatus(paidToggle.dataset.userId, paidToggle.checked);
+      await updateEntryPaymentStatus(paidToggle.dataset.entryId, paidToggle.checked);
     } catch (error) {
       paidToggle.checked = !paidToggle.checked;
       toast(error.message || 'No se pudo actualizar el pago.', 'error');
@@ -4628,7 +4628,7 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         const gap = leader ? Math.max(leader.points - row.points, 0) : 0;
         const crown = row.rank === 1 ? '<span class="leaderboard-spotlight-crown">Lider</span>' : '';
         return `
-          <article class="leaderboard-spotlight-card ${row.isCurrentUser ? 'current' : ''} ${index === 0 ? 'leaderboard-spotlight-card-top' : ''}">
+          <article class="leaderboard-spotlight-card rank-${row.rank} ${row.isCurrentUser ? 'current' : ''} ${index === 0 ? 'leaderboard-spotlight-card-top' : ''}">
             <div class="leaderboard-spotlight-topline">
               <div class="leaderboard-spotlight-rank">${medalByRank[row.rank] || String(row.rank).padStart(2, '0')}</div>
               <div class="leaderboard-spotlight-points">
@@ -4639,7 +4639,7 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
             <div class="leaderboard-spotlight-head">
               ${getAvatarMarkup(row, 'leaderboard-avatar leaderboard-avatar-large')}
               <div class="leaderboard-spotlight-copy">
-                <p>${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu entrada' : ''}${renderPaidBadge(row.isPaid)}</p>
+                <p>${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; Tu' : ''}${renderPaidBadge(row.isPaid)}</p>
                 <span>${escapeHtml(row.ownerUsername || 'Cuenta')}${gap === 0 ? ' · marca el ritmo del torneo' : ` · ${gap} pts del lider`}</span>
               </div>
               ${crown}
@@ -4674,7 +4674,7 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         <div class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}" style="animation-delay:${index * 45}ms">
           <div class="rank-number">${String(row.rank).padStart(2, '0')}</div>
           <div class="leaderboard-user">
-            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; tu entrada' : ''}${renderPaidBadge(row.isPaid)}</div>
+            <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; Tu' : ''}${renderPaidBadge(row.isPaid)}</div>
             <div class="leaderboard-meta">
               <span>${escapeHtml(row.ownerUsername || 'Cuenta')}</span>
               <span>#${row.rank}</span>

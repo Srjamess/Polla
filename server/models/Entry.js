@@ -27,6 +27,10 @@ const entrySchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    isPaid: {
+      type: Boolean,
+      default: false
+    },
     totalPoints: {
       type: Number,
       default: 0

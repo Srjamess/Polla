@@ -2883,7 +2883,7 @@ input[type="number"]::-webkit-inner-spin-button {
     "topline"
     "head";
   gap: 10px;
-  min-height: 108px;
+  min-height: 122px;
   padding: 16px 16px 14px;
   border: 0.5px solid rgba(255, 255, 255, 0.07);
   border-radius: 18px;
@@ -2931,6 +2931,8 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .leaderboard-spotlight-copy {
   min-width: 0;
+  display: grid;
+  gap: 4px;
 }
 
 .leaderboard-spotlight-copy p,
@@ -2940,11 +2942,11 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .leaderboard-spotlight-copy p {
-  font-size: 18px;
-  line-height: 1.05;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
+  font-size: 17px;
+  line-height: 1.08;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .leaderboard-name,
@@ -2961,6 +2963,12 @@ input[type="number"]::-webkit-inner-spin-button {
 .rank-number {
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+.leaderboard-spotlight-copy span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .leaderboard-spotlight-crown {
@@ -2996,6 +3004,48 @@ input[type="number"]::-webkit-inner-spin-button {
 .leaderboard-spotlight .leaderboard-avatar-large {
   width: 34px;
   height: 34px;
+}
+
+@media (min-width: 900px) {
+  .leaderboard-spotlight {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .leaderboard-spotlight-card {
+    min-height: 132px;
+  }
+
+  .leaderboard-spotlight-card-top {
+    transform: translateY(-4px);
+  }
+
+  .leaderboard-spotlight-card.rank-1 {
+    background:
+      radial-gradient(circle at top right, rgba(250, 204, 21, 0.13), transparent 30%),
+      radial-gradient(circle at bottom left, rgba(74, 222, 128, 0.06), transparent 34%),
+      rgba(255, 255, 255, 0.02);
+  }
+
+  .leaderboard-spotlight-card.rank-2 {
+    background:
+      radial-gradient(circle at top right, rgba(148, 163, 184, 0.09), transparent 30%),
+      rgba(255, 255, 255, 0.017);
+  }
+
+  .leaderboard-spotlight-card.rank-3 {
+    background:
+      radial-gradient(circle at top right, rgba(251, 146, 60, 0.08), transparent 30%),
+      rgba(255, 255, 255, 0.017);
+  }
+
+  .leaderboard-spotlight-copy p {
+    font-size: 18px;
+  }
+
+  .leaderboard-spotlight-copy span {
+    font-size: 12px;
+  }
 }
 
 .leaderboard-ranking-shell {

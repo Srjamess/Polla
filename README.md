@@ -162,8 +162,9 @@ El script borra los partidos existentes e inserta un fixture demo con grupos A/B
 
 ## Pagos
 
-- El modelo `User` incluye `isPaid` para marcar si un usuario ya pago la apuesta.
-- El leaderboard muestra una insignia visual cuando `isPaid` es verdadero y ordena las entradas por puntos.
+- El pago ahora se marca por `Entry`, no por `User`.
+- El leaderboard muestra una insignia visual cuando `entry.isPaid` es verdadero y ordena las entradas por puntos.
+- Si una persona crea 3 entradas, puedes marcar 1, 2 o 3 como pagadas de forma independiente.
 - El panel de administracion permite cambiar ese estado sin tocar puntos, predicciones ni el rol de admin.
 
 ## Unificar cuentas duplicadas
@@ -234,6 +235,6 @@ Render asigna `PORT` automaticamente, pero puedes dejarlo configurado si lo nece
 ## Notas
 
 - Firebase maneja la sesion del usuario y el backend verifica su `ID token`.
-- La app usa `isAdmin` para el panel de administracion y `isPaid` para el control de pagos.
+- La app usa `isAdmin` para el panel de administracion y `Entry.isPaid` para el control de pagos.
 - El frontend usa `localStorage` para guardar la cuenta, las entradas y la entrada activa, y refresca el token con Firebase.
 - Todos los endpoints no-auth estan protegidos con middleware de Firebase Auth.
