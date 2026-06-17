@@ -997,8 +997,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .hero-match-cards {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  display: block;
   gap: 12px;
   align-items: start;
 }
@@ -1019,6 +1018,21 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .hero-match-cards .next-match-card {
   margin-bottom: 0;
+}
+
+@media (max-width: 899px) {
+  .hero-match-cards {
+    display: block !important;
+  }
+
+  .hero-live-match {
+    margin-bottom: 12px;
+  }
+
+  .hero-live-match,
+  .hero-next-match {
+    width: 100%;
+  }
 }
 
 .next-match-card--skeleton {
@@ -3625,6 +3639,7 @@ body.modal-open {
   }
 
   .hero-match-cards {
+    display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-self: start;
   }
@@ -3834,6 +3849,7 @@ body.modal-open {
   }
 
   .hero-match-cards {
+    display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
