@@ -20,7 +20,7 @@
           <button class="sidebar-link" type="button" data-nav-view="matches">Partidos</button>
           <button class="sidebar-link" type="button" data-nav-view="predictions">Predicciones</button>
           <button class="sidebar-link" type="button" data-nav-view="bracket">Eliminatoria</button>
-          <a class="sidebar-link" href="leaderboard.html" data-nav-page="leaderboard">Tabla general</a>
+          <button class="sidebar-link" type="button" data-nav-view="leaderboard">Tabla general</button>
         </nav>
 
         <div class="sidebar-block sidebar-actions">
@@ -38,14 +38,15 @@
           <div class="topbar-label">POLLA MUNDIALISTA</div>
           <span id="currentUser" class="visually-hidden"></span>
           <div class="topbar-actions">
-            <a
+            <button
               id="leaderboardRankLink"
               class="leaderboard-rank-link hidden"
-              href="leaderboard.html"
+              type="button"
+              data-nav-view="leaderboard"
               aria-label="Abrir tabla general"
             >
               <span id="leaderboardRankBadge" class="user-rank-badge">#--</span>
-            </a>
+            </button>
             <button class="profile-trigger" type="button" data-open-more aria-label="Abrir mas opciones">
               <span class="topbar-profile-meta">
                 <span id="userAvatar" class="user-avatar">PM</span>
@@ -57,7 +58,10 @@
         <main class="page-shell">
           <section class="hero-section">
             <p class="eyebrow">Temporada 2026</p>
-            <div id="dashboardNextMatch" class="hero-next-match" aria-label="Proximo partido"></div>
+            <div class="hero-match-cards" aria-label="Partidos destacados">
+              <div id="dashboardLiveMatch" class="hero-live-match" aria-label="Partido en vivo"></div>
+              <div id="dashboardNextMatch" class="hero-next-match" aria-label="Proximo partido"></div>
+            </div>
           </section>
 
           <section class="fixture-tabs" aria-label="Secciones del fixture">
@@ -65,13 +69,13 @@
             <button class="fixture-tab" type="button" data-view="matches">Partidos</button>
             <button class="fixture-tab" type="button" data-view="predictions">Predicciones</button>
             <button class="fixture-tab" type="button" data-view="bracket">Eliminatoria</button>
-            <a class="fixture-tab" href="leaderboard.html">Tabla general</a>
+            <button class="fixture-tab" type="button" data-view="leaderboard">Tabla general</button>
           </section>
 
           <section id="adminPanel" class="admin-panel glass-card hidden">
             <h2>Administracion</h2>
             <p class="admin-note">
-              El fixture oficial ya esta cargado. Usa los formularios dentro de cada tarjeta para guardar resultados reales y definir el clasificado en cruces empatados.
+              El fixture oficial ya esta cargado. Los marcadores en vivo se sincronizan automaticamente y los formularios quedan para corregir o cerrar el resultado final, incluida la clasificacion en cruces empatados.
             </p>
           </section>
 
@@ -79,6 +83,80 @@
           <section id="matchesBoard" class="groups-board"></section>
           <section id="predictionsBoard" class="groups-board"></section>
           <section id="knockoutBoard" class="knockout-board"></section>
+          <section id="leaderboardBoard" class="leaderboard-board hidden">
+            <section class="hero-section hero-section-compact leaderboard-hero">
+              <div class="leaderboard-hero-copy">
+                <nav class="fixture-tabs leaderboard-mobile-nav" aria-label="Navegacion rapida">
+                  <button class="fixture-tab" type="button" data-view="standings">Posiciones</button>
+                  <button class="fixture-tab" type="button" data-view="matches">Partidos</button>
+                  <button class="fixture-tab" type="button" data-view="predictions">Predicciones</button>
+                  <button class="fixture-tab" type="button" data-view="bracket">Eliminatoria</button>
+                  <button class="fixture-tab active" type="button" data-view="leaderboard" aria-current="page">Tabla general</button>
+                </nav>
+                <p class="eyebrow">Ranking general</p>
+                <h1 class="hero-title">
+                  <span class="hero-line hero-line-strong">Tabla de</span>
+                  <span class="hero-line hero-line-soft">posiciones</span>
+                </h1>
+                <p class="leaderboard-hero-text">
+                  Sigue el podio, compara tu diferencia con el lider y revisa el ritmo de la competencia en tiempo real.
+                </p>
+              </div>
+
+              <div
+                class="leaderboard-hero-panel is-collapsed"
+                id="leaderboardHeroPanel"
+                role="button"
+                tabindex="0"
+                aria-expanded="false"
+                aria-controls="leaderboardPredictionSummary"
+              >
+                <div class="leaderboard-panel-head">
+                  <p class="leaderboard-panel-kicker">Pulso del torneo</p>
+                  <span class="leaderboard-panel-toggle">Toca para ver tu desglose</span>
+                </div>
+                <div class="leaderboard-overview">
+                  <article class="leaderboard-stat-card">
+                    <span>Tu puesto</span>
+                    <strong id="leaderboardCurrentRank">--</strong>
+                  </article>
+                  <article class="leaderboard-stat-card">
+                    <span>Tus puntos</span>
+                    <strong id="leaderboardCurrentPoints">--</strong>
+                  </article>
+                  <article class="leaderboard-stat-card">
+                    <span>Diferencia</span>
+                    <strong id="leaderboardCurrentGap">--</strong>
+                  </article>
+                  <article class="leaderboard-stat-card">
+                    <span>Entradas</span>
+                    <strong id="leaderboardTotalPlayers">--</strong>
+                  </article>
+                </div>
+                <div
+                  id="leaderboardPredictionSummary"
+                  class="leaderboard-prediction-summary hidden"
+                  aria-hidden="true"
+                ></div>
+              </div>
+            </section>
+
+            <section class="leaderboard-card leaderboard-shell">
+              <div id="leaderboardSpotlight" class="leaderboard-spotlight"></div>
+
+              <div class="leaderboard-ranking-shell">
+                <div class="leaderboard-ranking-head">
+                  <div>
+                    <p class="leaderboard-panel-kicker">Clasificacion completa</p>
+                    <h2>Todos los participantes</h2>
+                  </div>
+                </div>
+
+                <div id="leaderboardList" class="leaderboard-ranking-list"></div>
+              </div>
+              <p id="emptyLeaderboard" class="empty-state hidden">Aun no hay entradas en la tabla.</p>
+            </section>
+          </section>
           <p id="emptyMatches" class="empty-state hidden">No hay partidos creados todavia.</p>
         </main>
       </div>
@@ -121,6 +199,21 @@
             <span class="sheet-item-label">Salir</span>
           </button>
         </div>
+      </div>
+    </div>
+
+    <div class="sheet-shell hidden" id="predictionsViewerModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="predictionsViewerTitle">
+      <div class="sheet-overlay" data-close-predictions-viewer></div>
+      <div class="sheet-card predictions-sheet-card">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow" data-predictions-viewer-eyebrow>Predicciones guardadas</p>
+            <h3 id="predictionsViewerTitle" data-predictions-viewer-title>Mis predicciones</h3>
+            <p class="sheet-subtitle hidden" data-predictions-viewer-subtitle></p>
+          </div>
+          <button class="sheet-close" type="button" aria-label="Cerrar" data-close-predictions-viewer>&times;</button>
+        </div>
+        <div class="sheet-scroll predictions-sheet-body" data-predictions-viewer-body></div>
       </div>
     </div>
 

@@ -143,8 +143,15 @@ router.post('/reset-pruebas', async (req, res) => {
         $set: {
           scoreA: null,
           scoreB: null,
+          liveScoreA: null,
+          liveScoreB: null,
+          liveMinute: '',
+          liveStatus: '',
+          liveQualifiedTeam: '',
+          liveUpdatedAt: null,
           resultSet: false,
-          qualifiedTeam: ''
+          qualifiedTeam: '',
+          resultSource: ''
         }
       }
     );

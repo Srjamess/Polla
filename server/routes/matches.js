@@ -72,6 +72,28 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/live', async (req, res) => {
+  try {
+    const matches = await Match.find();
+    const liveMatch = matches.find((match) => String(match.liveStatus || '').toLowerCase() === 'live');
+
+    if (!liveMatch) {
+      return res.json(null);
+    }
+
+    const actualContext = buildResolutionContext(matches);
+    const actualTeams = resolveMatchTeams(liveMatch, actualContext);
+
+    res.json({
+      ...liveMatch.toObject(),
+      actualResolvedTeamA: actualTeams.teamA || '',
+      actualResolvedTeamB: actualTeams.teamB || ''
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not fetch live match.' });
+  }
+});
+
 router.post('/', requireAdmin, async (req, res) => {
   try {
     const { code, teamA, teamB, matchDate, stage, group, sourceA, sourceB, venue } = req.body;
@@ -132,7 +154,19 @@ router.patch('/:id/result', requireAdmin, async (req, res) => {
 
     const match = await Match.findByIdAndUpdate(
       req.params.id,
-      { scoreA: parsedScoreA, scoreB: parsedScoreB, resultSet: true, qualifiedTeam: qualifiedSide },
+      {
+        scoreA: parsedScoreA,
+        scoreB: parsedScoreB,
+        resultSet: true,
+        qualifiedTeam: qualifiedSide,
+        liveScoreA: null,
+        liveScoreB: null,
+        liveMinute: '',
+        liveStatus: 'finished',
+        liveUpdatedAt: new Date(),
+        liveQualifiedTeam: '',
+        resultSource: 'manual'
+      },
       { new: true, runValidators: true }
     );
 

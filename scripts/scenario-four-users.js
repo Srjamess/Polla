@@ -54,8 +54,15 @@ async function main() {
       $set: {
         scoreA: null,
         scoreB: null,
+        liveScoreA: null,
+        liveScoreB: null,
+        liveMinute: '',
+        liveStatus: '',
+        liveQualifiedTeam: '',
+        liveUpdatedAt: null,
         resultSet: false,
-        qualifiedTeam: ''
+        qualifiedTeam: '',
+        resultSource: ''
       }
     }
   );
@@ -73,7 +80,14 @@ async function main() {
       scoreA,
       scoreB,
       resultSet: true,
-      qualifiedTeam: ''
+      qualifiedTeam: '',
+      liveScoreA: null,
+      liveScoreB: null,
+      liveMinute: '',
+      liveStatus: 'finished',
+      liveQualifiedTeam: '',
+      liveUpdatedAt: null,
+      resultSource: 'manual'
     };
 
     await Match.findByIdAndUpdate(match._id, payload, { new: true, runValidators: true });

@@ -1,16 +1,18 @@
 const express = require('express');
+const Entry = require('../models/Entry');
 const Match = require('../models/Match');
 const Prediction = require('../models/Prediction');
 const { authenticate } = require('../middleware/auth');
 const { recalculateAllScores, calculateMatchPoints } = require('../utils/scoring');
 const { getAppSettings } = require('../utils/appSettings');
-const { ensureUserEntries } = require('../utils/entries');
+const { ensureUserEntries, serializeEntry } = require('../utils/entries');
 const {
   buildPredictionMap,
   buildResolutionContext,
   calculateGroupBonus,
   calculateKnockoutBonus
 } = require('../utils/tournament');
+const { getMatchScoreState } = require('../utils/matchResolution');
 
 const router = express.Router();
 
@@ -102,7 +104,8 @@ async function buildPredictionSummary(entryId, predictedWorstTeam = '') {
 
   predictions.forEach((prediction) => {
     const match = matches.find((entry) => String(entry._id) === String(prediction.match));
-    if (!match || !match.resultSet) return;
+    const scoreState = getMatchScoreState(match);
+    if (!match || !scoreState.played) return;
     matchPoints += calculateMatchPoints(prediction, match);
   });
 
@@ -122,6 +125,33 @@ async function buildPredictionSummary(entryId, predictedWorstTeam = '') {
   };
 }
 
+function serializePredictionResponse(prediction) {
+  const match = prediction.match;
+
+  return {
+    id: prediction._id,
+    matchId: match._id,
+    code: match.code || '',
+    stage: match.stage || '',
+    group: match.group || '',
+    matchDate: match.matchDate,
+    teamA: match.teamA,
+    teamB: match.teamB,
+    sourceA: match.sourceA || '',
+    sourceB: match.sourceB || '',
+    venue: match.venue || '',
+    resultSet: Boolean(match.resultSet),
+    scoreA: match.resultSet ? match.scoreA : null,
+    scoreB: match.resultSet ? match.scoreB : null,
+    liveStatus: String(match.liveStatus || ''),
+    predictedScoreA: prediction.predictedScoreA,
+    predictedScoreB: prediction.predictedScoreB,
+    predictedQualifiedTeam: prediction.predictedQualifiedTeam || '',
+    points: prediction.points || 0,
+    scored: Boolean(prediction.scored)
+  };
+}
+
 router.get('/me', async (req, res) => {
   try {
     const { activeEntry } = await resolveEntryContext(req);
@@ -135,35 +165,43 @@ router.get('/me', async (req, res) => {
 
     const data = predictions
       .filter((prediction) => prediction.match)
-      .map((prediction) => {
-        const match = prediction.match;
-
-        return {
-          id: prediction._id,
-          matchId: match._id,
-          code: match.code || '',
-          stage: match.stage || '',
-          group: match.group || '',
-          matchDate: match.matchDate,
-          teamA: match.teamA,
-          teamB: match.teamB,
-          sourceA: match.sourceA || '',
-          sourceB: match.sourceB || '',
-          venue: match.venue || '',
-          resultSet: Boolean(match.resultSet),
-          scoreA: match.resultSet ? match.scoreA : null,
-          scoreB: match.resultSet ? match.scoreB : null,
-          predictedScoreA: prediction.predictedScoreA,
-          predictedScoreB: prediction.predictedScoreB,
-          predictedQualifiedTeam: prediction.predictedQualifiedTeam || '',
-          points: prediction.points || 0,
-          scored: Boolean(prediction.scored)
-        };
-      });
+      .map((prediction) => serializePredictionResponse(prediction));
 
     res.json(data);
   } catch (error) {
     res.status(500).json({ message: 'Could not fetch predictions.' });
+  }
+});
+
+router.get('/entry/:entryId', async (req, res) => {
+  try {
+    const entryId = String(req.params.entryId || '').trim();
+    if (!entryId) {
+      return res.status(400).json({ message: 'Entry id is required.' });
+    }
+
+    const entry = await Entry.findById(entryId).populate('user', 'username');
+    if (!entry) {
+      return res.status(404).json({ message: 'Entry not found.' });
+    }
+
+    const predictions = await Prediction.find({ entry: entry._id })
+      .populate('match')
+      .sort({ createdAt: -1 });
+
+    const data = predictions
+      .filter((prediction) => prediction.match)
+      .map((prediction) => serializePredictionResponse(prediction));
+
+    const summary = await buildPredictionSummary(entry._id, entry.predictedWorstTeam || '');
+
+    res.json({
+      entry: serializeEntry(entry, null, entry.user),
+      predictions: data,
+      summary
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not fetch entry predictions.' });
   }
 });
 

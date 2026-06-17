@@ -146,6 +146,7 @@ El script borra los partidos existentes e inserta un fixture demo con grupos A/B
 ### Predicciones
 
 - `POST /api/predictions/:matchId`
+- `GET /api/predictions/entry/:entryId`
 
 ### Leaderboard
 

@@ -4,6 +4,7 @@ const Entry = require('../models/Entry');
 const User = require('../models/User');
 const { getAppSettings } = require('./appSettings');
 const { ensureUserEntries } = require('./entries');
+const { getMatchScoreState } = require('./matchResolution');
 const {
   buildPredictionMap,
   buildResolutionContext,
@@ -16,10 +17,13 @@ function outcome(scoreA, scoreB) {
   return scoreA > scoreB ? 'teamA' : 'teamB';
 }
 
-function calculateMatchPoints(prediction, match) {
+function calculateMatchPoints(prediction, match, options = {}) {
+  const scoreState = getMatchScoreState(match, options);
+  if (!scoreState.played) return 0;
+
   const exactScore =
-    prediction.predictedScoreA === match.scoreA &&
-    prediction.predictedScoreB === match.scoreB;
+    prediction.predictedScoreA === scoreState.scoreA &&
+    prediction.predictedScoreB === scoreState.scoreB;
 
   if (exactScore) return 3;
 
@@ -27,7 +31,7 @@ function calculateMatchPoints(prediction, match) {
     prediction.predictedScoreA,
     prediction.predictedScoreB
   );
-  const realOutcome = outcome(match.scoreA, match.scoreB);
+  const realOutcome = outcome(scoreState.scoreA, scoreState.scoreB);
 
   return predictedOutcome === realOutcome ? 1 : 0;
 }
@@ -45,8 +49,9 @@ async function recalculateAllScores() {
   await Promise.all(
     predictions.map(async (prediction) => {
       const match = matchById.get(String(prediction.match));
+      const scoreState = getMatchScoreState(match, { includeLive: true });
 
-      if (!match || !match.resultSet) {
+      if (!match || !scoreState.played) {
         prediction.points = 0;
         prediction.scored = false;
       } else {

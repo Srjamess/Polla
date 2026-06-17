@@ -1,3 +1,5 @@
+const { getMatchScoreState, getMatchQualifiedSide } = require('./matchResolution');
+
 const BONUS_STAGE_POINTS = {
   roundOf16: 2,
   quarterfinal: 3,
@@ -116,12 +118,13 @@ function applyScore(teamA, teamB, scoreA, scoreB) {
   teamB.diff = teamB.goalsFor - teamB.goalsAgainst;
 }
 
-function getActualScore(match) {
-  if (!match.resultSet) return { played: false };
+function getActualScore(match, options = {}) {
+  const scoreState = getMatchScoreState(match, options);
+  if (!scoreState.played) return { played: false };
   return {
     played: true,
-    scoreA: Number(match.scoreA),
-    scoreB: Number(match.scoreB)
+    scoreA: Number(scoreState.scoreA),
+    scoreB: Number(scoreState.scoreB)
   };
 }
 
@@ -135,12 +138,9 @@ function getPredictedScore(match, predictionByMatchId) {
   };
 }
 
-function getActualQualifiedSide(match) {
-  if (!match.resultSet) return null;
-  if (Number(match.scoreA) === Number(match.scoreB)) {
-    return match.qualifiedTeam || null;
-  }
-  return Number(match.scoreA) > Number(match.scoreB) ? 'teamA' : 'teamB';
+function getActualQualifiedSide(match, options = {}) {
+  const result = getMatchQualifiedSide(match, options);
+  return result.played ? result.qualifiedSide : null;
 }
 
 function getPredictedQualifiedSide(match, predictionByMatchId) {
@@ -170,11 +170,11 @@ function sortMatchesForResolution(matches) {
   });
 }
 
-function buildResolutionContext(matches, predictionByMatchId) {
+function buildResolutionContext(matches, predictionByMatchId, options = {}) {
   const actualMode = predictionByMatchId == null;
   const predictionMap = actualMode ? null : predictionByMatchId;
   const scoreGetter = actualMode
-    ? (match) => getActualScore(match)
+    ? (match) => getActualScore(match, options)
     : (match) => getPredictedScore(match, predictionMap);
   const { tables, groupStatus } = buildGroupTables(matches, scoreGetter);
   const matchesByCode = new Map(
@@ -193,7 +193,7 @@ function buildResolutionContext(matches, predictionByMatchId) {
   const usedThirdGroups = new Set();
 
   const getQualifiedSide = actualMode
-    ? (match) => getActualQualifiedSide(match)
+    ? (match) => getActualQualifiedSide(match, options)
     : (match) => getPredictedQualifiedSide(match, predictionMap);
 
   return {

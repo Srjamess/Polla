@@ -60,6 +60,36 @@ const matchSchema = new mongoose.Schema(
       min: 0,
       default: null
     },
+    liveScoreA: {
+      type: Number,
+      min: 0,
+      default: null
+    },
+    liveScoreB: {
+      type: Number,
+      min: 0,
+      default: null
+    },
+    liveMinute: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    liveStatus: {
+      type: String,
+      trim: true,
+      enum: ['', 'live', 'finished', 'notstarted', 'postponed'],
+      default: ''
+    },
+    liveQualifiedTeam: {
+      type: String,
+      enum: ['', 'teamA', 'teamB'],
+      default: ''
+    },
+    liveUpdatedAt: {
+      type: Date,
+      default: null
+    },
     resultSet: {
       type: Boolean,
       default: false
@@ -67,6 +97,12 @@ const matchSchema = new mongoose.Schema(
     qualifiedTeam: {
       type: String,
       enum: ['', 'teamA', 'teamB'],
+      default: ''
+    },
+    resultSource: {
+      type: String,
+      trim: true,
+      enum: ['', 'manual', 'live'],
       default: ''
     }
   },

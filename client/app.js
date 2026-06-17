@@ -26,6 +26,24 @@ const state = {
     worstTeamBonus: 0,
     total: 0
   },
+  predictionsViewer: {
+    open: false,
+    loading: false,
+    mode: 'mine',
+    entryId: '',
+    entryName: '',
+    ownerUsername: '',
+    isCurrentUser: false,
+    title: 'Mis predicciones',
+    eyebrow: 'Predicciones guardadas',
+    subtitle: '',
+    emptyMessage: 'Aun no tienes predicciones guardadas.',
+    breakdownTitle: 'Desglose de puntos',
+    summary: null,
+    predictions: [],
+    error: '',
+    requestId: null
+  },
   predictionDrafts: {},
   worstTeamPrediction: {
     predictedWorstTeam: '',
@@ -39,11 +57,27 @@ const state = {
   savingPredictionStage: null,
   invalidPredictionMatchIds: [],
   profileDraftImage: '',
+  liveMatch: {
+    game: null,
+    lastGame: null,
+    loading: false,
+    error: '',
+    loaded: false,
+    missingPolls: 0
+  },
+  liveMatchPollingId: null,
+  liveMatchCacheKey: 'pm_live_match_cache',
   activeAvatarSection: 'Futbol',
   adminSettings: null,
   adminUsers: [],
   bracketResizeBound: false,
-  bracketTab: 'real'
+  bracketTab: 'real',
+  leaderboard: {
+    items: [],
+    loaded: false,
+    loading: false,
+    promise: null
+  }
 };
 
 const firebaseSession = {
@@ -140,6 +174,79 @@ const teamFlags = {
   'Uzbekistán': 'uz',
   Uzbekistan: 'uz'
 };
+
+const liveTeamNameMap = {
+  Algeria: 'Argelia',
+  Argentina: 'Argentina',
+  Australia: 'Australia',
+  Austria: 'Austria',
+  Belgium: 'Bélgica',
+  Brazil: 'Brasil',
+  Canada: 'Canadá',
+  Chile: 'Chile',
+  Colombia: 'Colombia',
+  Croatia: 'Croacia',
+  'Czech Republic': 'Chequia',
+  Denmark: 'Dinamarca',
+  'Democratic Republic of the Congo': 'RD Congo',
+  Ecuador: 'Ecuador',
+  England: 'Inglaterra',
+  France: 'Francia',
+  Germany: 'Alemania',
+  Haiti: 'Haití',
+  Iraq: 'Irak',
+  Iran: 'Irán',
+  Japan: 'Japón',
+  Jordan: 'Jordania',
+  Mexico: 'México',
+  Morocco: 'Marruecos',
+  Netherlands: 'Países Bajos',
+  Norway: 'Noruega',
+  Panama: 'Panamá',
+  Paraguay: 'Paraguay',
+  Portugal: 'Portugal',
+  Qatar: 'Catar',
+  'Saudi Arabia': 'Arabia Saudí',
+  Scotland: 'Escocia',
+  Senegal: 'Senegal',
+  Spain: 'España',
+  Sweden: 'Suecia',
+  Switzerland: 'Suiza',
+  Tunisia: 'Túnez',
+  Turkey: 'Turquía',
+  'United States': 'Estados Unidos',
+  'United States of America': 'Estados Unidos',
+  Uruguay: 'Uruguay',
+  Uzbekistan: 'Uzbekistán'
+};
+
+Object.assign(liveTeamNameMap, {
+  Bolivia: 'Bolivia',
+  'Cote dIvoire': 'Costa de Marfil',
+  Egypt: 'Egipto',
+  'Korea Republic': 'Corea del Sur',
+  'Republic of Korea': 'Corea del Sur',
+  'South Africa': 'SudÃ¡frica',
+  Wales: 'Gales',
+  'Democratic Republic of the Congo': 'RD Congo',
+  'Ivory Coast': 'Costa de Marfil',
+  'Saudi Arabia': 'Arabia SaudÃ­',
+  'Czech Republic': 'Chequia'
+});
+
+function getLiveMatchTeamName(match, side) {
+  const resolvedKey = side === 'away'
+    ? String(match?.actualResolvedTeamB || match?.teamB || match?.away_team_name_en || match?.away_team_label || '').trim()
+    : String(match?.actualResolvedTeamA || match?.teamA || match?.home_team_name_en || match?.home_team_label || '').trim();
+  const feedKey = side === 'away'
+    ? String(match?.away_team_name_en || match?.away_team_label || '').trim()
+    : String(match?.home_team_name_en || match?.home_team_label || '').trim();
+  const fallbackSpanish = side === 'away'
+    ? String(match?.away_team_name_es || match?.away_team_name_fa || '').trim()
+    : String(match?.home_team_name_es || match?.home_team_name_fa || '').trim();
+
+  return resolvedKey || liveTeamNameMap[feedKey] || fallbackSpanish || feedKey;
+}
 
 const groupTeams = {
   A: ['México', 'Sudáfrica', 'República de Corea', 'Chequia'],
@@ -354,6 +461,25 @@ function clearSession() {
   state.profileDraftPreset = '';
   state.profileDraftImageRemoved = false;
   state.profileDraftImage = '';
+  state.liveMatch = {
+    game: null,
+    lastGame: null,
+    loading: false,
+    error: '',
+    loaded: false,
+    missingPolls: 0
+  };
+  localStorage.removeItem(state.liveMatchCacheKey);
+  if (state.liveMatchPollingId) {
+    window.clearInterval(state.liveMatchPollingId);
+    state.liveMatchPollingId = null;
+  }
+  state.leaderboard = {
+    items: [],
+    loaded: false,
+    loading: false,
+    promise: null
+  };
 }
 
 async function initializeFirebaseAuth() {
@@ -657,7 +783,7 @@ async function setActiveEntry(entryId, { reload = true, silent = false } = {}) {
     if (document.getElementById('leaderboardList')) {
       const list = document.getElementById('leaderboardList');
       const emptyState = document.getElementById('emptyLeaderboard');
-      if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+      if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true, force: true });
     }
     syncProfileModal();
   }
@@ -1085,16 +1211,28 @@ function renderAdminResultForm(match) {
   const labelA = match.actualResolvedTeamA || match.teamA || 'Equipo A';
   const labelB = match.actualResolvedTeamB || match.teamB || 'Equipo B';
   const qualifiedValue = match.qualifiedTeam || '';
+  const liveScore = getLiveMatchScore(match);
+  const scoreValueA = match.resultSet && Number.isInteger(match.scoreA)
+    ? match.scoreA
+    : liveScore?.scoreA ?? '';
+  const scoreValueB = match.resultSet && Number.isInteger(match.scoreB)
+    ? match.scoreB
+    : liveScore?.scoreB ?? '';
+  const resultStatus = match.resultSet
+    ? 'Finalizado'
+    : liveScore
+      ? 'En vivo'
+      : 'Pendiente';
 
   return `
     <div class="admin-result-box">
       <div class="admin-result-head">
         <strong>Resultado real</strong>
-        <span>${match.resultSet ? 'Actualizable' : 'Pendiente'}</span>
+        <span>${resultStatus}</span>
       </div>
       <form class="result-form" data-result-form>
-        <input name="scoreA" type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="1" placeholder="Gol A" value="${match.resultSet && Number.isInteger(match.scoreA) ? match.scoreA : ''}" required />
-        <input name="scoreB" type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="1" placeholder="Gol B" value="${match.resultSet && Number.isInteger(match.scoreB) ? match.scoreB : ''}" required />
+        <input name="scoreA" type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="1" placeholder="Gol A" value="${scoreValueA}" required />
+        <input name="scoreB" type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="1" placeholder="Gol B" value="${scoreValueB}" required />
         ${match.stage === 'group' ? '' : `
           <select name="qualifiedTeam">
             <option value="">Clasificado si hay empate</option>
@@ -1433,6 +1571,12 @@ function renderMatch(match, groupTables, groupStatus, matchesByCode, compact, hi
     : renderTeam(match.teamB, match.sourceB, groupTables, groupStatus, matchesByCode);
   const qualifierA = getPersonalResolvedTeam(match, 'A') || 'Equipo A';
   const qualifierB = getPersonalResolvedTeam(match, 'B') || 'Equipo B';
+  const liveScore = getLiveMatchScore(match);
+  const centerScore = match.resultSet
+    ? `${match.scoreA}<span>-</span>${match.scoreB}`
+    : liveScore
+      ? `${liveScore.scoreA}<span>-</span>${liveScore.scoreB}`
+      : 'VS';
   const dateLabel = minimalPredictionCard
     ? new Intl.DateTimeFormat('es-CO', {
         day: 'numeric',
@@ -1450,7 +1594,7 @@ function renderMatch(match, groupTables, groupStatus, matchesByCode, compact, hi
       </div>
       <div class="teams-row">
         ${teamAContent}
-        <div class="score-chip">${match.resultSet ? `${match.scoreA}<span>-</span>${match.scoreB}` : 'VS'}</div>
+        <div class="score-chip ${liveScore && !match.resultSet ? 'score-chip--live' : ''}">${centerScore}</div>
         ${teamBContent}
       </div>
       ${minimalPredictionCard ? '' : `<p class="venue">${escapeHtml(match.venue || '')}</p>`}
@@ -1476,7 +1620,14 @@ function renderMatch(match, groupTables, groupStatus, matchesByCode, compact, hi
 }
 
 function renderFixtureTeamsRow(match) {
-  const centerValue = match.resultSet ? `${match.scoreA}-${match.scoreB}` : formatFixtureTime(match.matchDate);
+  const liveScore = getLiveMatchScore(match);
+  const matchDate = match.matchDate ? new Date(match.matchDate) : null;
+  const hasStarted = Boolean(matchDate && !Number.isNaN(matchDate.getTime()) && matchDate <= new Date());
+  const centerValue = match.resultSet
+    ? `${match.scoreA}-${match.scoreB}`
+    : hasStarted && liveScore
+      ? `${liveScore.scoreA}-${liveScore.scoreB}`
+      : formatFixtureTime(match.matchDate);
   const teamALabel = match.actualResolvedTeamA || (match.sourceA ? prettySourceLabel(match.sourceA) : match.teamA);
   const teamBLabel = match.actualResolvedTeamB || (match.sourceB ? prettySourceLabel(match.sourceB) : match.teamB);
   const metaParts = [
@@ -1683,9 +1834,9 @@ function renderMyPredictionsTable(predictions) {
   `;
 }
 
-function renderMyPredictionsCards(predictions) {
+function renderMyPredictionsCards(predictions, options = {}) {
   if (!predictions.length) {
-    return '<p class="empty-state">Aun no tienes predicciones guardadas.</p>';
+    return `<p class="empty-state">${escapeHtml(options.emptyMessage || 'Aun no tienes predicciones guardadas.')}</p>`;
   }
 
   const stageOrder = {
@@ -1778,14 +1929,18 @@ function renderMyPredictionsSummary(predictions) {
   `;
 }
 
-function renderPredictionPointsBreakdown(options = {}) {
-  const summary = state.predictionSummary || {
-    matchPoints: 0,
-    groupBonus: 0,
-    knockoutBonus: 0,
-    worstTeamBonus: 0,
-    total: 0
+function normalizePredictionSummary(summary = {}) {
+  return {
+    matchPoints: Number(summary.matchPoints || 0),
+    groupBonus: Number(summary.groupBonus || 0),
+    knockoutBonus: Number(summary.knockoutBonus || 0),
+    worstTeamBonus: Number(summary.worstTeamBonus || 0),
+    total: Number(summary.total || 0)
   };
+}
+
+function renderPredictionPointsBreakdown(options = {}) {
+  const summary = normalizePredictionSummary(options.summary || state.predictionSummary);
   const title = options.title || 'Desglose de puntos';
   const className = options.className ? ` ${options.className}` : '';
 
@@ -1815,6 +1970,105 @@ function renderPredictionPointsBreakdown(options = {}) {
       </div>
     </div>
   `;
+}
+
+function renderPredictionsViewerBody(viewer = {}) {
+  if (viewer.loading) {
+    return '<p class="empty-state predictions-viewer-state">Cargando predicciones...</p>';
+  }
+
+  if (viewer.error) {
+    return `<p class="empty-state predictions-viewer-state predictions-viewer-state-error">${escapeHtml(viewer.error)}</p>`;
+  }
+
+  const summary = viewer.summary ? normalizePredictionSummary(viewer.summary) : null;
+  const breakdown = summary
+    ? renderPredictionPointsBreakdown({
+      summary,
+      title: viewer.breakdownTitle || 'Desglose de puntos',
+      className: 'prediction-breakdown-card-hero'
+    })
+    : '';
+  const predictions = Array.isArray(viewer.predictions) ? viewer.predictions : [];
+
+  return `
+    ${breakdown}
+    ${renderMyPredictionsCards(predictions, {
+      emptyMessage: viewer.emptyMessage || 'Aun no hay predicciones para mostrar.'
+    })}
+  `;
+}
+
+function syncPredictionsViewerModal() {
+  const modal = document.getElementById('predictionsViewerModal');
+  if (!modal) return;
+
+  const baseViewer = state.predictionsViewer || {};
+  const viewer = baseViewer.mode === 'mine'
+    ? {
+      ...baseViewer,
+      summary: state.predictionSummary,
+      predictions: state.myPredictions
+    }
+    : baseViewer;
+  const isOpen = Boolean(viewer.open);
+  const eyebrow = modal.querySelector('[data-predictions-viewer-eyebrow]');
+  const title = modal.querySelector('[data-predictions-viewer-title]');
+  const subtitle = modal.querySelector('[data-predictions-viewer-subtitle]');
+  const body = modal.querySelector('[data-predictions-viewer-body]');
+
+  modal.classList.toggle('hidden', !isOpen);
+  modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+
+  if (eyebrow) eyebrow.textContent = viewer.eyebrow || 'Predicciones guardadas';
+  if (title) title.textContent = viewer.title || 'Mis predicciones';
+
+  if (subtitle) {
+    const subtitleText = viewer.subtitle || '';
+    subtitle.textContent = subtitleText;
+    subtitle.classList.toggle('hidden', !subtitleText);
+  }
+
+  if (body) {
+    body.innerHTML = renderPredictionsViewerBody(viewer);
+  }
+}
+
+function openPredictionsViewerModal(viewer = {}) {
+  state.predictionsViewer = {
+    ...state.predictionsViewer,
+    ...viewer,
+    open: true,
+    loading: Boolean(viewer.loading),
+    error: String(viewer.error || ''),
+    requestId: viewer.requestId || null
+  };
+  syncPredictionsViewerModal();
+  document.body.classList.add('modal-open');
+}
+
+function closePredictionsViewerModal() {
+  state.predictionsViewer = {
+    ...state.predictionsViewer,
+    open: false,
+    loading: false,
+    error: '',
+    requestId: null
+  };
+  syncPredictionsViewerModal();
+  document.body.classList.remove('modal-open');
+}
+
+function setPredictionsViewerLoading(viewerPatch = {}) {
+  state.predictionsViewer = {
+    ...state.predictionsViewer,
+    ...viewerPatch,
+    loading: true,
+    open: true,
+    error: ''
+  };
+  syncPredictionsViewerModal();
+  document.body.classList.add('modal-open');
 }
 
 function renderLeaderboardPredictionSummary() {
@@ -1863,27 +2117,6 @@ function setupLeaderboardHeroPanel() {
   });
 
   panel.dataset.bound = 'true';
-}
-
-function renderMyPredictionsModal(predictions) {
-  return `
-    <div class="sheet-shell hidden" id="myPredictionsModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="myPredictionsTitle">
-      <div class="sheet-overlay" data-close-my-predictions></div>
-      <div class="sheet-card predictions-sheet-card">
-        <div class="sheet-head">
-          <div>
-            <p class="eyebrow">Predicciones guardadas</p>
-            <h3 id="myPredictionsTitle">Mis predicciones</h3>
-          </div>
-          <button class="sheet-close" type="button" aria-label="Cerrar" data-close-my-predictions>&times;</button>
-        </div>
-        <div class="sheet-scroll predictions-sheet-body">
-          ${renderPredictionPointsBreakdown()}
-          ${renderMyPredictionsCards(predictions)}
-        </div>
-      </div>
-    </div>
-  `;
 }
 
 const bracketMatchLabels = {
@@ -1994,9 +2227,13 @@ function getBracketWinnerSide(match, mode = 'real') {
     return '';
   }
 
-  if (!match?.resultSet) return '';
-  if (Number(match.scoreA) > Number(match.scoreB)) return 'A';
-  if (Number(match.scoreB) > Number(match.scoreA)) return 'B';
+  const liveScore = getLiveMatchScore(match);
+  const scoreA = match?.resultSet ? Number(match.scoreA) : liveScore?.scoreA;
+  const scoreB = match?.resultSet ? Number(match.scoreB) : liveScore?.scoreB;
+
+  if (scoreA === null || scoreA === undefined || scoreB === null || scoreB === undefined) return '';
+  if (Number(scoreA) > Number(scoreB)) return 'A';
+  if (Number(scoreB) > Number(scoreA)) return 'B';
   return '';
 }
 
@@ -2030,12 +2267,13 @@ function renderBracketMatchCard(match, groupTables, groupStatus, matchesByCode, 
   const teamA = getBracketDisplayTeam(match, 'A', mode);
   const teamB = getBracketDisplayTeam(match, 'B', mode);
   const winnerSide = getBracketWinnerSide(match, mode);
+  const liveScore = getLiveMatchScore(match);
   const scoreA = mode === 'predicted'
     ? getBracketPredictionScore(match, 'A')
-    : (match.resultSet ? Number(match.scoreA) : null);
+    : (match.resultSet ? Number(match.scoreA) : liveScore?.scoreA ?? null);
   const scoreB = mode === 'predicted'
     ? getBracketPredictionScore(match, 'B')
-    : (match.resultSet ? Number(match.scoreB) : null);
+    : (match.resultSet ? Number(match.scoreB) : liveScore?.scoreB ?? null);
 
   return `
     <article class="bk-match" data-bracket-code="${escapeHtml(match.code || match._id)}">
@@ -2356,8 +2594,11 @@ function renderBracketCard(match, groupTables, groupStatus, matchesByCode) {
   const labelA = teamA || prettySourceLabel(match.sourceA || '') || 'Por definir';
   const labelB = teamB || prettySourceLabel(match.sourceB || '') || 'Por definir';
 
-  const winnerA = match.resultSet && Number(match.scoreA) > Number(match.scoreB);
-  const winnerB = match.resultSet && Number(match.scoreB) > Number(match.scoreA);
+  const liveScore = getLiveMatchScore(match);
+  const scoreA = match.resultSet ? Number(match.scoreA) : liveScore?.scoreA;
+  const scoreB = match.resultSet ? Number(match.scoreB) : liveScore?.scoreB;
+  const winnerA = scoreA !== null && scoreA !== undefined && scoreB !== null && scoreB !== undefined && Number(scoreA) > Number(scoreB);
+  const winnerB = scoreA !== null && scoreA !== undefined && scoreB !== null && scoreB !== undefined && Number(scoreB) > Number(scoreA);
 
   return `
     <article class="bracket-card" data-match-id="${escapeHtml(match._id)}">
@@ -2374,13 +2615,13 @@ function renderBracketCard(match, groupTables, groupStatus, matchesByCode) {
         <div class="bracket-team-row ${winnerA ? 'winner' : ''}">
           ${teamA ? renderFlag(teamA) : '<span class="bracket-flag-placeholder"></span>'}
           <span class="bracket-team-name">${escapeHtml(labelA)}</span>
-          ${match.resultSet ? `<strong class="bracket-score">${match.scoreA}</strong>` : ''}
+          ${scoreA !== null && scoreA !== undefined ? `<strong class="bracket-score">${scoreA}</strong>` : ''}
         </div>
 
         <div class="bracket-team-row ${winnerB ? 'winner' : ''}">
           ${teamB ? renderFlag(teamB) : '<span class="bracket-flag-placeholder"></span>'}
           <span class="bracket-team-name">${escapeHtml(labelB)}</span>
-          ${match.resultSet ? `<strong class="bracket-score">${match.scoreB}</strong>` : ''}
+          ${scoreB !== null && scoreB !== undefined ? `<strong class="bracket-score">${scoreB}</strong>` : ''}
         </div>
       </div>
     </article>
@@ -2567,12 +2808,12 @@ function orderByCode(matches, codes) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function renderFixture(matches, myPredictions = []) {
-  const dashboardNextMatch = document.getElementById('dashboardNextMatch');
   const groupsBoard      = document.getElementById('groupsBoard');
   const matchesBoard     = document.getElementById('matchesBoard');
   const predictionsBoard = document.getElementById('predictionsBoard');
   const knockoutBoard    = document.getElementById('knockoutBoard');
-  if (!groupsBoard || !matchesBoard || !predictionsBoard || !knockoutBoard) return;
+  const leaderboardBoard = document.getElementById('leaderboardBoard');
+  if (!groupsBoard || !matchesBoard || !predictionsBoard || !knockoutBoard || !leaderboardBoard) return;
 
   const { tables: groupTables, groupStatus } = computeGroupTables(matches);
   buildClientPredictionResolution(matches);
@@ -2592,9 +2833,7 @@ function renderFixture(matches, myPredictions = []) {
   const thirdPlace      = knockoutMatches.filter((m) => m.stage === 'thirdPlace');
   const finals          = knockoutMatches.filter((m) => m.stage === 'final');
 
-  if (dashboardNextMatch) {
-    dashboardNextMatch.innerHTML = renderNextMatchCard(matches);
-  }
+  renderDashboardHeroCards(renderNextMatchCard(matches), renderLiveMatchCard(state.liveMatch?.game));
 
   groupsBoard.innerHTML = `
     <div class="standings-grid">${renderStandings(groupTables)}</div>
@@ -2619,7 +2858,6 @@ function renderFixture(matches, myPredictions = []) {
           : renderClosedPredictionsState(myPredictions)}
       </div>
       ${renderWorstTeamPredictionCard()}
-      ${renderMyPredictionsModal(myPredictions)}
       ${renderPredictionReviewSheet(predictionMatches)}
     </section>
   `;
@@ -2727,10 +2965,12 @@ function renderFixture(matches, myPredictions = []) {
   `;
 
   updateBracketView();
+  syncPredictionsViewerModal();
   groupsBoard.classList.toggle('hidden',      state.activeView !== 'standings');
   matchesBoard.classList.toggle('hidden',     state.activeView !== 'matches');
   predictionsBoard.classList.toggle('hidden', state.activeView !== 'predictions');
   knockoutBoard.classList.toggle('hidden',    state.activeView !== 'bracket');
+  leaderboardBoard.classList.toggle('hidden', state.activeView !== 'leaderboard');
 }
 
 function setupSharedLayout() {
@@ -2875,6 +3115,117 @@ function updateLeaderboardRankBadge(rank) {
   rankLink?.classList.add('hidden');
 }
 
+function renderLeaderboardData(leaderboard, list, emptyState) {
+  const rows = Array.isArray(leaderboard) ? leaderboard : [];
+  const maxPoints = Math.max(...rows.map((row) => Number(row.points || 0)), 1);
+  const leader = rows[0] || null;
+  const currentUser = rows.find((row) => row.isCurrentUser) || null;
+  const spotlight = document.getElementById('leaderboardSpotlight');
+  const currentRank = document.getElementById('leaderboardCurrentRank');
+  const currentPoints = document.getElementById('leaderboardCurrentPoints');
+  const currentGap = document.getElementById('leaderboardCurrentGap');
+  const totalPlayers = document.getElementById('leaderboardTotalPlayers');
+
+  renderLeaderboardPredictionSummary();
+
+  if (spotlight) {
+    const medalByRank = {
+      1: '01',
+      2: '02',
+      3: '03'
+    };
+
+    spotlight.innerHTML = rows.slice(0, 3).map((row, index) => {
+      const gap = leader ? Math.max(Number(leader.points || 0) - Number(row.points || 0), 0) : 0;
+      const crown = row.rank === 1 ? '<span class="leaderboard-spotlight-crown">Lider</span>' : '';
+      return `
+        <article
+          class="leaderboard-spotlight-card rank-${row.rank} ${row.isCurrentUser ? 'current' : ''} ${index === 0 ? 'leaderboard-spotlight-card-top' : ''}"
+          data-entry-id="${escapeHtml(row.id)}"
+          data-entry-name="${escapeHtml(row.username)}"
+          data-owner-username="${escapeHtml(row.ownerUsername || '')}"
+          data-is-current-user="${row.isCurrentUser ? 'true' : 'false'}"
+          role="button"
+          tabindex="0"
+          aria-label="Ver predicciones de ${escapeHtml(row.username)}"
+          aria-haspopup="dialog"
+          aria-controls="predictionsViewerModal"
+        >
+          <div class="leaderboard-spotlight-topline">
+            <div class="leaderboard-spotlight-rank">${medalByRank[row.rank] || String(row.rank).padStart(2, '0')}</div>
+            <div class="leaderboard-spotlight-points">
+              <strong>${row.points}</strong>
+              <span>puntos</span>
+            </div>
+          </div>
+          <div class="leaderboard-spotlight-head">
+            ${getAvatarMarkup(row, 'leaderboard-avatar leaderboard-avatar-large')}
+            <div class="leaderboard-spotlight-copy">
+              <p>${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; Tu' : ''}${renderPaidBadge(row.isPaid)}</p>
+              <span>${escapeHtml(row.ownerUsername || 'Cuenta')}${gap === 0 ? ' · marca el ritmo del torneo' : ` · ${gap} pts del lider`}</span>
+            </div>
+            ${crown}
+          </div>
+        </article>
+      `;
+    }).join('');
+    spotlight.classList.toggle('hidden', rows.length === 0);
+  }
+
+  if (currentRank) {
+    currentRank.textContent = currentUser ? `#${currentUser.rank}` : '--';
+  }
+
+  if (currentPoints) {
+    currentPoints.textContent = currentUser ? `${currentUser.points} pts` : '--';
+  }
+
+  if (currentGap) {
+    currentGap.textContent = leader && currentUser ? `${Math.max(Number(leader.points || 0) - Number(currentUser.points || 0), 0)} pts` : '--';
+  }
+
+  if (totalPlayers) {
+    totalPlayers.textContent = String(rows.length);
+  }
+
+  updateLeaderboardRankBadge(currentUser ? currentUser.rank : null);
+
+  list.innerHTML = rows.map((row, index) => {
+    const percent = Math.max((Number(row.points || 0) / maxPoints) * 100, 6);
+    return `
+      <div
+        class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}"
+        style="animation-delay:${index * 45}ms"
+        data-entry-id="${escapeHtml(row.id)}"
+        data-entry-name="${escapeHtml(row.username)}"
+        data-owner-username="${escapeHtml(row.ownerUsername || '')}"
+        data-is-current-user="${row.isCurrentUser ? 'true' : 'false'}"
+        role="button"
+        tabindex="0"
+        aria-label="Ver predicciones de ${escapeHtml(row.username)}"
+        aria-haspopup="dialog"
+        aria-controls="predictionsViewerModal"
+      >
+        <div class="rank-number">${String(row.rank).padStart(2, '0')}</div>
+        <div class="leaderboard-user">
+          <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; Tu' : ''}${renderPaidBadge(row.isPaid)}</div>
+          <div class="leaderboard-meta">
+            <span>${escapeHtml(row.ownerUsername || 'Cuenta')}</span>
+            <span>#${row.rank}</span>
+          </div>
+          <div class="points-track"><span style="width:${percent}%"></span></div>
+        </div>
+        <div class="leaderboard-points">
+          <strong>${row.points}</strong>
+          <span>pts</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  decorateLeaderboardAvatars(list, rows);
+  emptyState.classList.toggle('hidden', rows.length > 0);
+}
+
 async function refreshCurrentUserRankBadge({ silent = true } = {}) {
   const rankBadge = document.getElementById('leaderboardRankBadge');
   if (!rankBadge || !state.user) return;
@@ -2933,7 +3284,7 @@ function updateBottomNavState() {
   document.querySelectorAll('[data-bottom-nav]').forEach((item) => item.classList.remove('is-active'));
   document.querySelectorAll('[data-nav-page]').forEach((item) => item.classList.remove('is-active'));
 
-  const isLeaderboardPage = Boolean(document.getElementById('leaderboardList'));
+  const isLeaderboardPage = document.body.classList.contains('leaderboard-page');
   const navKey = isLeaderboardPage ? 'leaderboard' : 'more';
 
   const activeItem = document.querySelector(`[data-bottom-nav="${navKey}"]`);
@@ -2987,6 +3338,11 @@ function initSharedShell() {
 
     if (event.target.closest('[data-close-predictions-help]')) {
       closePredictionsHelpModal();
+      return;
+    }
+
+    if (event.target.closest('[data-close-my-predictions]') || event.target.closest('[data-close-predictions-viewer]')) {
+      closeMyPredictionsModal();
       return;
     }
 
@@ -3098,7 +3454,7 @@ function initSharedShell() {
           if (document.getElementById('leaderboardList')) {
             const list = document.getElementById('leaderboardList');
             const emptyState = document.getElementById('emptyLeaderboard');
-            if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+            if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true, force: true });
           }
         })
         .catch((error) => {
@@ -3113,6 +3469,7 @@ function initSharedShell() {
       closeProfileModal();
       closeScoringModal();
       closePredictionsHelpModal();
+      closeMyPredictionsModal();
       closeMoreSheet();
     }
   });
@@ -3596,6 +3953,314 @@ function renderWorstTeamPredictionCard() {
   `;
 }
 
+function formatLiveMinute(game) {
+  const candidates = [
+    game?.liveMinute,
+    game?.minute,
+    game?.live_minute,
+    game?.elapsed_minute,
+    game?.elapsed_minutes,
+    game?.minutes,
+    game?.time,
+    game?.current_minute,
+    game?.time_elapsed_minute
+  ];
+
+  for (const value of candidates) {
+    if (value == null || value === '') continue;
+    const text = String(value).trim();
+    if (!text) continue;
+    if (/^\d+$/.test(text)) return `${text}'`;
+    if (/^\d+'$/.test(text)) return text;
+  }
+
+  return "LIVE";
+}
+
+function getLiveMatchScore(match) {
+  if (!match) return null;
+  const liveStatus = String(match.liveStatus || '').toLowerCase();
+  const matchDate = match.matchDate ? new Date(match.matchDate) : null;
+  const hasStarted = Boolean(matchDate && !Number.isNaN(matchDate.getTime()) && matchDate <= new Date());
+
+  if (match.resultSet || liveStatus === 'finished') {
+    return {
+      scoreA: match.scoreA,
+      scoreB: match.scoreB
+    };
+  }
+
+  if (hasStarted && liveStatus === 'live') {
+    const liveScoreA = Number(match.scoreA);
+    const liveScoreB = Number(match.scoreB);
+    if (Number.isInteger(liveScoreA) && Number.isInteger(liveScoreB)) {
+      return {
+        scoreA: liveScoreA,
+        scoreB: liveScoreB
+      };
+    }
+  }
+
+  const liveScoreA = Number(match.liveScoreA);
+  const liveScoreB = Number(match.liveScoreB);
+  if (hasStarted && Number.isInteger(liveScoreA) && Number.isInteger(liveScoreB)) {
+    return {
+      scoreA: liveScoreA,
+      scoreB: liveScoreB
+    };
+  }
+
+  const homeScore = Number(match.home_score);
+  const awayScore = Number(match.away_score);
+  if (Number.isInteger(homeScore) && Number.isInteger(awayScore)) {
+    return {
+      scoreA: homeScore,
+      scoreB: awayScore
+    };
+  }
+
+  return null;
+}
+
+function renderLiveMatchCard(match) {
+  if (!match) return '';
+
+  const homeTeam = getLiveMatchTeamName(match, 'home');
+  const awayTeam = getLiveMatchTeamName(match, 'away');
+  const score = getLiveMatchScore(match);
+  const homeScore = score ? String(score.scoreA) : '';
+  const awayScore = score ? String(score.scoreB) : '';
+  const minute = formatLiveMinute(match);
+
+  return `
+    <section class="next-match-card next-match-card--live">
+      <div class="next-match-badge next-match-badge--live">
+        <span class="next-match-pulse next-match-pulse--live"></span>
+        EN VIVO
+      </div>
+      <div class="next-match-layout">
+        <div class="next-match-team">
+          ${renderFlag(homeTeam)}
+          <span>${escapeHtml(homeTeam)}</span>
+        </div>
+        <div class="next-match-center">
+          <strong>${escapeHtml(`${homeScore} - ${awayScore}`)}</strong>
+          <span>${escapeHtml(minute)}</span>
+        </div>
+        <div class="next-match-team">
+          ${renderFlag(awayTeam)}
+          <span>${escapeHtml(awayTeam)}</span>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderDashboardHeroCards(nextMatchHtml, liveMatchHtml) {
+  const liveMatchContainer = document.getElementById('dashboardLiveMatch');
+  const nextMatchContainer = document.getElementById('dashboardNextMatch');
+
+  if (liveMatchContainer) {
+    if (liveMatchHtml) {
+      liveMatchContainer.innerHTML = liveMatchHtml;
+      liveMatchContainer.classList.remove('is-hidden');
+    } else if (state.liveMatch.loading || !state.liveMatch.loaded) {
+      liveMatchContainer.innerHTML = `
+        <section class="next-match-card next-match-card--skeleton" aria-hidden="true">
+          <div class="next-match-badge">
+            <span class="next-match-pulse"></span>
+            EN VIVO
+          </div>
+          <div class="next-match-layout">
+            <div class="next-match-team">
+              <span class="flag-placeholder"></span>
+              <span>&nbsp;</span>
+            </div>
+            <div class="next-match-center">
+              <strong>&nbsp;</strong>
+              <span>&nbsp;</span>
+            </div>
+            <div class="next-match-team">
+              <span class="flag-placeholder"></span>
+              <span>&nbsp;</span>
+            </div>
+          </div>
+        </section>
+      `;
+      liveMatchContainer.classList.remove('is-hidden');
+    } else {
+      liveMatchContainer.innerHTML = `
+        <section class="next-match-card next-match-card--skeleton" aria-hidden="true">
+          <div class="next-match-badge">
+            <span class="next-match-pulse"></span>
+            EN VIVO
+          </div>
+          <div class="next-match-layout">
+            <div class="next-match-team">
+              <span class="flag-placeholder"></span>
+              <span>&nbsp;</span>
+            </div>
+            <div class="next-match-center">
+              <strong>&nbsp;</strong>
+              <span>&nbsp;</span>
+            </div>
+            <div class="next-match-team">
+              <span class="flag-placeholder"></span>
+              <span>&nbsp;</span>
+            </div>
+          </div>
+        </section>
+      `;
+      liveMatchContainer.classList.add('is-hidden');
+    }
+  }
+
+  if (nextMatchContainer) {
+    nextMatchContainer.innerHTML = nextMatchHtml;
+  }
+}
+
+function getLiveMatchCache() {
+  return safeParse(localStorage.getItem(state.liveMatchCacheKey), null);
+}
+
+function setLiveMatchCache(game) {
+  if (!game) return;
+
+  const payload = {
+    game,
+    savedAt: Date.now()
+  };
+
+  localStorage.setItem(state.liveMatchCacheKey, JSON.stringify(payload));
+}
+
+function hydrateLiveMatchFromCache() {
+  const cached = getLiveMatchCache();
+  if (!cached?.game || !cached.savedAt) return false;
+
+  const maxAgeMs = 5 * 60 * 1000;
+  if (Date.now() - Number(cached.savedAt) > maxAgeMs) return false;
+
+  state.liveMatch = {
+    game: cached.game,
+    lastGame: cached.game,
+    loading: false,
+    error: '',
+    loaded: true,
+    missingPolls: 0
+  };
+
+  renderDashboardHeroCards(renderNextMatchCard(state.matches), renderLiveMatchCard(cached.game));
+  return true;
+}
+
+async function fetchLiveMatchFromServer() {
+  return apiFetch('/matches/live');
+}
+
+async function refreshLiveMatchCard({ silent = true } = {}) {
+  const liveMatchContainer = document.getElementById('dashboardLiveMatch');
+  if (!liveMatchContainer) return null;
+
+  state.liveMatch.loading = true;
+  renderDashboardHeroCards(renderNextMatchCard(state.matches), renderLiveMatchCard(state.liveMatch.game || state.liveMatch.lastGame));
+
+  try {
+    const previousScore = state.liveMatch.game
+      ? `${state.liveMatch.game.scoreA ?? state.liveMatch.game.liveScoreA ?? ''}-${state.liveMatch.game.scoreB ?? state.liveMatch.game.liveScoreB ?? ''}`
+      : '';
+    const liveGame = await fetchLiveMatchFromServer();
+    if (liveGame) {
+      setLiveMatchCache(liveGame);
+      const nextScore = `${liveGame.scoreA ?? liveGame.liveScoreA ?? ''}-${liveGame.scoreB ?? liveGame.liveScoreB ?? ''}`;
+      state.liveMatch = {
+        ...state.liveMatch,
+        game: liveGame,
+        lastGame: liveGame,
+        loading: false,
+        error: '',
+        loaded: true,
+        missingPolls: 0
+      };
+      renderDashboardHeroCards(renderNextMatchCard(state.matches), renderLiveMatchCard(liveGame));
+      if (nextScore !== previousScore) {
+        await loadMatches();
+        await refreshLeaderboardIfVisible();
+      }
+      return liveGame;
+    }
+
+    const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
+    const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
+    const shouldKeepVisible = Boolean(fallbackGame) && nextMissingPolls < 3;
+
+    state.liveMatch = {
+      ...state.liveMatch,
+      game: shouldKeepVisible ? fallbackGame : null,
+      loading: false,
+      error: '',
+      loaded: true,
+      missingPolls: nextMissingPolls
+    };
+
+    if (!shouldKeepVisible) {
+      localStorage.removeItem(state.liveMatchCacheKey);
+    }
+
+    renderDashboardHeroCards(
+      renderNextMatchCard(state.matches),
+      shouldKeepVisible ? renderLiveMatchCard(fallbackGame) : ''
+    );
+    return shouldKeepVisible ? fallbackGame : null;
+  } catch (error) {
+    const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
+    const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
+    const shouldKeepVisible = Boolean(fallbackGame) && nextMissingPolls < 3;
+
+    state.liveMatch = {
+      ...state.liveMatch,
+      game: shouldKeepVisible ? fallbackGame : null,
+      loading: false,
+      error: error.message || 'No se pudo cargar el marcador en vivo.',
+      loaded: true,
+      missingPolls: nextMissingPolls
+    };
+
+    if (!shouldKeepVisible) {
+      localStorage.removeItem(state.liveMatchCacheKey);
+    }
+
+    renderDashboardHeroCards(
+      renderNextMatchCard(state.matches),
+      shouldKeepVisible ? renderLiveMatchCard(fallbackGame) : ''
+    );
+    if (!silent) {
+      toast(state.liveMatch.error, 'error');
+    }
+    return shouldKeepVisible ? fallbackGame : null;
+  } finally {
+    state.liveMatch.loading = false;
+  }
+}
+
+function startLiveMatchPolling() {
+  if (state.liveMatchPollingId) return;
+
+  refreshLiveMatchCard({ silent: true });
+  state.liveMatchPollingId = window.setInterval(() => {
+    if (document.hidden) return;
+    refreshLiveMatchCard({ silent: true });
+  }, 60000);
+
+  window.addEventListener('beforeunload', () => {
+    if (state.liveMatchPollingId) {
+      window.clearInterval(state.liveMatchPollingId);
+      state.liveMatchPollingId = null;
+    }
+  }, { once: true });
+}
+
 function renderAdminWorstTeamCard() {
   if (!state.user?.isAdmin) return '';
 
@@ -3799,7 +4464,7 @@ async function refreshLeaderboardIfVisible() {
   const list = document.getElementById('leaderboardList');
   const emptyState = document.getElementById('emptyLeaderboard');
   if (list && emptyState) {
-    await loadLeaderboard(list, emptyState, { silent: true });
+    await loadLeaderboard(list, emptyState, { silent: true, force: true });
   }
 }
 
@@ -3897,7 +4562,7 @@ async function saveProfileSettings() {
   if (document.getElementById('leaderboardList')) {
     const list = document.getElementById('leaderboardList');
     const emptyState = document.getElementById('emptyLeaderboard');
-    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true, force: true });
   }
 }
 
@@ -3921,7 +4586,7 @@ async function createEntryFromModal() {
   if (document.getElementById('leaderboardList')) {
     const list = document.getElementById('leaderboardList');
     const emptyState = document.getElementById('emptyLeaderboard');
-    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true, force: true });
   }
   await loadMatches();
 }
@@ -3951,7 +4616,7 @@ async function deleteEntryFromModal(entryId) {
   if (document.getElementById('leaderboardList')) {
     const list = document.getElementById('leaderboardList');
     const emptyState = document.getElementById('emptyLeaderboard');
-    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true });
+    if (list && emptyState) await loadLeaderboard(list, emptyState, { silent: true, force: true });
   }
   await loadMatches();
 }
@@ -3995,19 +4660,89 @@ function closePredictionsHelpModal() {
 }
 
 function openMyPredictionsModal() {
-  const modal = document.getElementById('myPredictionsModal');
-  if (!modal) return;
-  modal.classList.remove('hidden');
-  modal.setAttribute('aria-hidden', 'false');
-  document.body.classList.add('modal-open');
+  openPredictionsViewerModal({
+    mode: 'mine',
+    entryId: '',
+    entryName: '',
+    ownerUsername: '',
+    isCurrentUser: false,
+    title: 'Mis predicciones',
+    eyebrow: 'Predicciones guardadas',
+    subtitle: 'Revisa tus puntos y tus partidos guardados.',
+    emptyMessage: 'Aun no tienes predicciones guardadas.',
+    breakdownTitle: 'Desglose de puntos'
+  });
 }
 
 function closeMyPredictionsModal() {
-  const modal = document.getElementById('myPredictionsModal');
-  if (!modal) return;
-  modal.classList.add('hidden');
-  modal.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('modal-open');
+  closePredictionsViewerModal();
+}
+
+async function openEntryPredictionsModal(row) {
+  const entryId = String(row?.id || row?.entryId || '').trim();
+  if (!entryId) return;
+
+  const title = String(row?.username || row?.name || 'Predicciones').trim() || 'Predicciones';
+  const ownerUsername = String(row?.ownerUsername || '').trim();
+  const subtitleParts = [];
+  if (ownerUsername) subtitleParts.push(ownerUsername);
+  if (row?.isCurrentUser) subtitleParts.push('Tu entrada');
+
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  state.predictionsViewer = {
+    ...state.predictionsViewer,
+    mode: 'entry',
+    open: true,
+    loading: true,
+    entryId,
+    entryName: title,
+    ownerUsername,
+    isCurrentUser: Boolean(row?.isCurrentUser),
+    title,
+    eyebrow: `Predicciones de ${title}`,
+    subtitle: subtitleParts.join(' · '),
+    emptyMessage: 'Este participante aun no tiene predicciones guardadas.',
+    breakdownTitle: 'Desglose de puntos',
+    summary: null,
+    predictions: [],
+    error: '',
+    requestId
+  };
+
+  syncPredictionsViewerModal();
+  document.body.classList.add('modal-open');
+
+  try {
+    const payload = await apiFetch(`/predictions/entry/${encodeURIComponent(entryId)}`);
+    if (state.predictionsViewer.requestId !== requestId || state.predictionsViewer.entryId !== entryId) return;
+
+    const entry = payload.entry || {};
+    const viewerTitle = String(entry.name || title).trim() || title;
+    const viewerOwner = String(entry.ownerUsername || ownerUsername || '').trim();
+    const viewerSubtitleParts = [];
+    if (viewerOwner) viewerSubtitleParts.push(viewerOwner);
+    if (state.predictionsViewer.isCurrentUser || entry.isCurrentEntry) viewerSubtitleParts.push('Tu entrada');
+
+    state.predictionsViewer = {
+      ...state.predictionsViewer,
+      loading: false,
+      title: viewerTitle,
+      eyebrow: `Predicciones de ${viewerTitle}`,
+      subtitle: viewerSubtitleParts.join(' · '),
+      summary: payload.summary || null,
+      predictions: Array.isArray(payload.predictions) ? payload.predictions : [],
+      error: ''
+    };
+    syncPredictionsViewerModal();
+  } catch (error) {
+    if (state.predictionsViewer.requestId !== requestId || state.predictionsViewer.entryId !== entryId) return;
+    state.predictionsViewer = {
+      ...state.predictionsViewer,
+      loading: false,
+      error: error.message || 'No se pudieron cargar las predicciones de esta entrada.'
+    };
+    syncPredictionsViewerModal();
+  }
 }
 
 function closePredictionReviewSheet() {
@@ -4245,6 +4980,15 @@ async function loadMatches() {
     syncEntryDependentState();
     syncPredictionDrafts(matches);
     renderFixture(state.matches, state.myPredictions);
+    const leaderboardList = document.getElementById('leaderboardList');
+    const leaderboardEmptyState = document.getElementById('emptyLeaderboard');
+    if (leaderboardList && leaderboardEmptyState && state.activeView === 'leaderboard') {
+      const board = state.leaderboard || {};
+      const options = board.promise && !board.loaded
+        ? { silent: false }
+        : { silent: true, force: true };
+      void loadLeaderboard(leaderboardList, leaderboardEmptyState, options);
+    }
   } catch (error) {
     if (error.status === 401) {
       clearSession();
@@ -4289,14 +5033,17 @@ async function initDashboardPage() {
   }
 
   const requestedView = new URLSearchParams(window.location.search).get('view');
-  if (['standings', 'matches', 'predictions', 'bracket'].includes(requestedView)) {
+  if (['standings', 'matches', 'predictions', 'bracket', 'leaderboard'].includes(requestedView)) {
     state.activeView = requestedView;
   }
 
   setupSharedLayout();
+  hydrateLiveMatchFromCache();
 
   const adminPanel   = document.getElementById('adminPanel');
   const matchesBoard = document.getElementById('matchesBoard');
+  const leaderboardList = document.getElementById('leaderboardList');
+  const leaderboardEmptyState = document.getElementById('emptyLeaderboard');
   const tabs         = document.querySelectorAll('[data-view]');
 
   const syncActiveViewControls = () => {
@@ -4307,14 +5054,27 @@ async function initDashboardPage() {
     updateBottomNavState();
   };
 
+  const activateView = (view) => {
+    if (!['standings', 'matches', 'predictions', 'bracket', 'leaderboard'].includes(view)) return;
+    state.activeView = view;
+    syncActiveViewControls();
+    renderFixture(state.matches, state.myPredictions);
+
+    if (view === 'leaderboard' && leaderboardList && leaderboardEmptyState) {
+      const board = state.leaderboard || {};
+      const options = board.promise && !board.loaded
+        ? { silent: false }
+        : { silent: true, force: true };
+      void loadLeaderboard(leaderboardList, leaderboardEmptyState, options);
+    }
+  };
+
   if (state.user?.isAdmin && adminPanel) adminPanel.classList.remove('hidden');
   renderAdminPanel();
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      state.activeView = tab.dataset.view;
-      syncActiveViewControls();
-      renderFixture(state.matches, state.myPredictions);
+      activateView(tab.dataset.view);
     });
   });
 
@@ -4324,17 +5084,17 @@ async function initDashboardPage() {
       if (!switchButton) return;
 
       const targetView = switchButton.dataset.switchView;
-      if (!['standings', 'matches', 'predictions', 'bracket'].includes(targetView)) return;
-
-      state.activeView = targetView;
-      syncActiveViewControls();
-      renderFixture(state.matches, state.myPredictions);
+      activateView(targetView);
     });
   }
 
   document.querySelectorAll('[data-nav-view]').forEach((control) => {
     control.addEventListener('click', () => {
       const targetView = control.dataset.navView;
+      if (targetView === 'leaderboard') {
+        activateView('leaderboard');
+        return;
+      }
       if (!['standings', 'matches', 'predictions', 'bracket'].includes(targetView)) return;
       state.activeView = targetView;
       syncActiveViewControls();
@@ -4414,7 +5174,7 @@ async function initDashboardPage() {
       return;
     }
 
-    if (event.target.closest('[data-close-my-predictions]')) {
+    if (event.target.closest('[data-close-my-predictions]') || event.target.closest('[data-close-predictions-viewer]')) {
       closeMyPredictionsModal();
       return;
     }
@@ -4485,6 +5245,11 @@ async function initDashboardPage() {
   });
 
   syncActiveViewControls();
+  hydrateLiveMatchFromCache();
+  if (leaderboardList && leaderboardEmptyState) {
+    void loadLeaderboard(leaderboardList, leaderboardEmptyState, { silent: true });
+  }
+  startLiveMatchPolling();
   loadMatches();
 }
 
@@ -4589,14 +5354,34 @@ function initAuthPage() {
 
 }
 
-async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
+async function loadLeaderboard(list, emptyState, { silent = false, force = false } = {}) {
   if (!list || !emptyState) return;
 
+  const board = state.leaderboard || {
+    items: [],
+    loaded: false,
+    loading: false,
+    promise: null
+  };
+
+  if (board.loaded && !force) {
+    renderLeaderboardData(board.items, list, emptyState);
+    return;
+  }
+
+  if (board.promise && !force) {
+    await board.promise;
+    renderLeaderboardData(state.leaderboard.items, list, emptyState);
+    return;
+  }
+
   try {
-    const [leaderboard, predictionSummary] = await Promise.all([
+    state.leaderboard.loading = true;
+    state.leaderboard.promise = Promise.all([
       apiFetch('/leaderboard'),
       apiFetch('/predictions/summary').catch(() => null)
     ]);
+    const [leaderboard, predictionSummary] = await state.leaderboard.promise;
     const maxPoints   = Math.max(...leaderboard.map((row) => row.points), 1);
     const leader      = leaderboard[0] || null;
     const currentUser = leaderboard.find((row) => row.isCurrentUser) || null;
@@ -4614,8 +5399,15 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         worstTeamBonus: Number(predictionSummary.worstTeamBonus || 0),
         total: Number(predictionSummary.total || 0)
       };
+      syncPredictionsViewerModal();
     }
     renderLeaderboardPredictionSummary();
+    state.leaderboard = {
+      items: Array.isArray(leaderboard) ? leaderboard : [],
+      loaded: true,
+      loading: false,
+      promise: null
+    };
 
     if (spotlight) {
       const medalByRank = {
@@ -4628,7 +5420,18 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
         const gap = leader ? Math.max(leader.points - row.points, 0) : 0;
         const crown = row.rank === 1 ? '<span class="leaderboard-spotlight-crown">Lider</span>' : '';
         return `
-          <article class="leaderboard-spotlight-card rank-${row.rank} ${row.isCurrentUser ? 'current' : ''} ${index === 0 ? 'leaderboard-spotlight-card-top' : ''}">
+          <article
+            class="leaderboard-spotlight-card rank-${row.rank} ${row.isCurrentUser ? 'current' : ''} ${index === 0 ? 'leaderboard-spotlight-card-top' : ''}"
+            data-entry-id="${escapeHtml(row.id)}"
+            data-entry-name="${escapeHtml(row.username)}"
+            data-owner-username="${escapeHtml(row.ownerUsername || '')}"
+            data-is-current-user="${row.isCurrentUser ? 'true' : 'false'}"
+            role="button"
+            tabindex="0"
+            aria-label="Ver predicciones de ${escapeHtml(row.username)}"
+            aria-haspopup="dialog"
+            aria-controls="predictionsViewerModal"
+          >
             <div class="leaderboard-spotlight-topline">
               <div class="leaderboard-spotlight-rank">${medalByRank[row.rank] || String(row.rank).padStart(2, '0')}</div>
               <div class="leaderboard-spotlight-points">
@@ -4671,7 +5474,19 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
     list.innerHTML = leaderboard.map((row, index) => {
       const percent = Math.max((row.points / maxPoints) * 100, 6);
       return `
-        <div class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}" style="animation-delay:${index * 45}ms">
+        <div
+          class="leaderboard-row ${row.isCurrentUser ? 'current' : ''} ${row.rank <= 3 ? 'podium' : ''}"
+          style="animation-delay:${index * 45}ms"
+          data-entry-id="${escapeHtml(row.id)}"
+          data-entry-name="${escapeHtml(row.username)}"
+          data-owner-username="${escapeHtml(row.ownerUsername || '')}"
+          data-is-current-user="${row.isCurrentUser ? 'true' : 'false'}"
+          role="button"
+          tabindex="0"
+          aria-label="Ver predicciones de ${escapeHtml(row.username)}"
+          aria-haspopup="dialog"
+          aria-controls="predictionsViewerModal"
+        >
           <div class="rank-number">${String(row.rank).padStart(2, '0')}</div>
           <div class="leaderboard-user">
             <div class="leaderboard-name">${escapeHtml(row.username)}${row.isCurrentUser ? ' &middot; Tu' : ''}${renderPaidBadge(row.isPaid)}</div>
@@ -4691,6 +5506,12 @@ async function loadLeaderboard(list, emptyState, { silent = false } = {}) {
     decorateLeaderboardAvatars(list, leaderboard);
     emptyState.classList.toggle('hidden', leaderboard.length > 0);
   } catch (error) {
+    state.leaderboard = {
+      items: [],
+      loaded: false,
+      loading: false,
+      promise: null
+    };
     list.innerHTML = '';
     const spotlight = document.getElementById('leaderboardSpotlight');
     if (spotlight) spotlight.innerHTML = '';
@@ -4731,17 +5552,48 @@ async function initLeaderboardPage() {
 
   await loadLeaderboard(list, emptyState);
 
-  const refreshLeaderboard = () => loadLeaderboard(list, emptyState, { silent: true });
-  const refreshInterval = window.setInterval(() => {
-    if (document.hidden) return;
-    refreshLeaderboard();
-  }, 15000);
+  const openLeaderboardEntryPredictions = (entryNode) => {
+    const entryId = String(entryNode?.dataset.entryId || '').trim();
+    if (!entryId) return;
 
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshLeaderboard();
+    openEntryPredictionsModal({
+      id: entryId,
+      username: entryNode.dataset.entryName || '',
+      ownerUsername: entryNode.dataset.ownerUsername || '',
+      isCurrentUser: entryNode.dataset.isCurrentUser === 'true'
+    }).catch((error) => {
+      toast(error.message || 'No se pudieron abrir las predicciones.', 'error');
+    });
+  };
+
+  const openFromEvent = (event) => {
+    const entryNode = event.target.closest('[data-entry-id]');
+    if (!entryNode) return false;
+    openLeaderboardEntryPredictions(entryNode);
+    return true;
+  };
+
+  list.addEventListener('click', openFromEvent);
+  list.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const entryNode = event.target.closest('[data-entry-id]');
+    if (!entryNode) return;
+    event.preventDefault();
+    openLeaderboardEntryPredictions(entryNode);
   });
-  window.addEventListener('focus', refreshLeaderboard);
-  window.addEventListener('beforeunload', () => window.clearInterval(refreshInterval), { once: true });
+
+  const spotlight = document.getElementById('leaderboardSpotlight');
+  if (spotlight) {
+    spotlight.addEventListener('click', openFromEvent);
+    spotlight.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const entryNode = event.target.closest('[data-entry-id]');
+      if (!entryNode) return;
+      event.preventDefault();
+      openLeaderboardEntryPredictions(entryNode);
+    });
+  }
+
 }
 
 initAuthPage();
