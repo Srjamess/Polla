@@ -76,36 +76,31 @@ router.get('/live', async (req, res) => {
   try {
     const matches = await Match.find();
     const now = new Date();
-    const liveMatch = matches.find((match) => String(match.liveStatus || '').toLowerCase() === 'live');
-    const fallbackMatch = liveMatch || matches
-      .filter((match) => {
-        const liveStatus = String(match.liveStatus || '').toLowerCase();
-        if (match.resultSet || liveStatus === 'finished') return false;
+    const liveWindowMs = 4 * 60 * 1000;
+    const liveMatches = matches.filter((match) => {
+      if (String(match.liveStatus || '').toLowerCase() !== 'live') return false;
 
-        const matchDate = match.matchDate ? new Date(match.matchDate) : null;
-        if (!matchDate || Number.isNaN(matchDate.getTime()) || matchDate > now) return false;
+      const updatedAt = match.liveUpdatedAt || match.updatedAt || match.createdAt;
+      const updatedTime = updatedAt ? new Date(updatedAt).getTime() : null;
+      if (!updatedTime || Number.isNaN(updatedTime)) return false;
 
-        return Boolean(
-          Number.isInteger(Number(match.scoreA)) ||
-          Number.isInteger(Number(match.scoreB)) ||
-          Number.isInteger(Number(match.liveScoreA)) ||
-          Number.isInteger(Number(match.liveScoreB)) ||
-          match.liveMinute ||
-          liveStatus
-        );
-      })
-      .sort((a, b) => new Date(b.matchDate) - new Date(a.matchDate))[0] || null;
+      return now.getTime() - updatedTime <= liveWindowMs;
+    });
+    const liveMatch = liveMatches.sort((a, b) => {
+      const aTime = new Date(a.liveUpdatedAt || a.updatedAt || a.createdAt || 0).getTime();
+      const bTime = new Date(b.liveUpdatedAt || b.updatedAt || b.createdAt || 0).getTime();
+      return bTime - aTime;
+    })[0] || null;
 
-    if (!fallbackMatch) {
+    if (!liveMatch) {
       return res.json(null);
     }
 
     const actualContext = buildResolutionContext(matches);
-    const actualTeams = resolveMatchTeams(fallbackMatch, actualContext);
+    const actualTeams = resolveMatchTeams(liveMatch, actualContext);
 
     res.json({
-      ...fallbackMatch.toObject(),
-      liveStatus: liveMatch ? fallbackMatch.liveStatus : 'live',
+      ...liveMatch.toObject(),
       actualResolvedTeamA: actualTeams.teamA || '',
       actualResolvedTeamB: actualTeams.teamB || ''
     });

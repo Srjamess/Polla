@@ -106,6 +106,12 @@ function isFinishedGameStatus(status) {
     normalized === 'final' ||
     normalized === 'ft' ||
     normalized === 'aet' ||
+    normalized === 'ended' ||
+    normalized === 'complete' ||
+    normalized === 'completed' ||
+    normalized === 'fulltime' ||
+    normalized === 'full-time' ||
+    normalized === 'closed' ||
     normalized.includes('full time') ||
     normalized.includes('finished')
   );

@@ -4155,6 +4155,19 @@ function hydrateLiveMatchFromCache() {
   return true;
 }
 
+function isFreshLiveGame(game, maxAgeMs = 4 * 60 * 1000) {
+  if (!game) return false;
+  if (String(game.liveStatus || '').toLowerCase() !== 'live') return false;
+
+  const updatedAt = game.liveUpdatedAt || game.updatedAt || game.createdAt;
+  if (!updatedAt) return false;
+
+  const updatedTime = new Date(updatedAt).getTime();
+  if (Number.isNaN(updatedTime)) return false;
+
+  return Date.now() - updatedTime <= maxAgeMs;
+}
+
 async function fetchLiveMatchFromServer() {
   return apiFetch('/matches/live');
 }
@@ -4193,7 +4206,7 @@ async function refreshLiveMatchCard({ silent = true } = {}) {
 
     const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
     const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
-    const shouldKeepVisible = Boolean(fallbackGame) && nextMissingPolls < 5;
+    const shouldKeepVisible = isFreshLiveGame(fallbackGame) && nextMissingPolls < 5;
 
     state.liveMatch = {
       ...state.liveMatch,
@@ -4216,7 +4229,7 @@ async function refreshLiveMatchCard({ silent = true } = {}) {
   } catch (error) {
     const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
     const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
-    const shouldKeepVisible = Boolean(fallbackGame) && nextMissingPolls < 5;
+    const shouldKeepVisible = isFreshLiveGame(fallbackGame) && nextMissingPolls < 5;
 
     state.liveMatch = {
       ...state.liveMatch,
@@ -4259,6 +4272,12 @@ function startLiveMatchPolling() {
       state.liveMatchPollingId = null;
     }
   }, { once: true });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      refreshLiveMatchCard({ silent: true });
+    }
+  });
 }
 
 function renderAdminWorstTeamCard() {
@@ -5250,7 +5269,8 @@ async function initDashboardPage() {
     void loadLeaderboard(leaderboardList, leaderboardEmptyState, { silent: true });
   }
   startLiveMatchPolling();
-  loadMatches();
+  await loadMatches();
+  void refreshLiveMatchCard({ silent: true });
 }
 
 function initAuthPage() {
