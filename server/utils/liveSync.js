@@ -68,6 +68,10 @@ function toIntegerScore(value) {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
+function normalizeStatus(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function getGameStatus(game) {
   return String(game?.time_elapsed || game?.status || '').toLowerCase();
 }
@@ -93,6 +97,46 @@ function getGameMinute(game) {
   }
 
   return '';
+}
+
+function isFinishedGameStatus(status) {
+  const normalized = normalizeStatus(status);
+  return (
+    normalized === 'finished' ||
+    normalized === 'final' ||
+    normalized === 'ft' ||
+    normalized === 'aet' ||
+    normalized.includes('full time') ||
+    normalized.includes('finished')
+  );
+}
+
+function isLiveGameStatus(status) {
+  const normalized = normalizeStatus(status);
+
+  if (!normalized) return false;
+  if (isFinishedGameStatus(normalized)) return false;
+
+  if (
+    normalized === 'notstarted' ||
+    normalized === 'postponed' ||
+    normalized === 'cancelled' ||
+    normalized === 'canceled' ||
+    normalized === 'ns'
+  ) {
+    return false;
+  }
+
+  if (/\d/.test(normalized)) return true;
+
+  return (
+    normalized.includes('live') ||
+    normalized.includes('in play') ||
+    normalized.includes('inplay') ||
+    normalized.includes('ongoing') ||
+    normalized.includes('half') ||
+    normalized.includes('progress')
+  );
 }
 
 function getFeedTeamName(game, side) {
@@ -188,11 +232,11 @@ function buildLiveMatchUpdate(match, game) {
   const matchDate = match?.matchDate ? new Date(match.matchDate) : null;
   const hasStarted = Boolean(matchDate && !Number.isNaN(matchDate.getTime()) && matchDate <= new Date());
 
-  if (!hasStarted && status !== 'finished') {
+  if (!hasStarted && !isFinishedGameStatus(status)) {
     return null;
   }
 
-  if (status === 'live' && homeScore !== null && awayScore !== null) {
+  if (isLiveGameStatus(status) && homeScore !== null && awayScore !== null) {
     return {
       scoreA: homeScore,
       scoreB: awayScore,
@@ -205,7 +249,7 @@ function buildLiveMatchUpdate(match, game) {
     };
   }
 
-  if (status === 'finished' && homeScore !== null && awayScore !== null) {
+  if (isFinishedGameStatus(status) && homeScore !== null && awayScore !== null) {
     const update = {
       scoreA: homeScore,
       scoreB: awayScore,

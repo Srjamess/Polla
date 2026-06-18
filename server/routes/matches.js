@@ -75,17 +75,37 @@ router.get('/', async (req, res) => {
 router.get('/live', async (req, res) => {
   try {
     const matches = await Match.find();
+    const now = new Date();
     const liveMatch = matches.find((match) => String(match.liveStatus || '').toLowerCase() === 'live');
+    const fallbackMatch = liveMatch || matches
+      .filter((match) => {
+        const liveStatus = String(match.liveStatus || '').toLowerCase();
+        if (match.resultSet || liveStatus === 'finished') return false;
 
-    if (!liveMatch) {
+        const matchDate = match.matchDate ? new Date(match.matchDate) : null;
+        if (!matchDate || Number.isNaN(matchDate.getTime()) || matchDate > now) return false;
+
+        return Boolean(
+          Number.isInteger(Number(match.scoreA)) ||
+          Number.isInteger(Number(match.scoreB)) ||
+          Number.isInteger(Number(match.liveScoreA)) ||
+          Number.isInteger(Number(match.liveScoreB)) ||
+          match.liveMinute ||
+          liveStatus
+        );
+      })
+      .sort((a, b) => new Date(b.matchDate) - new Date(a.matchDate))[0] || null;
+
+    if (!fallbackMatch) {
       return res.json(null);
     }
 
     const actualContext = buildResolutionContext(matches);
-    const actualTeams = resolveMatchTeams(liveMatch, actualContext);
+    const actualTeams = resolveMatchTeams(fallbackMatch, actualContext);
 
     res.json({
-      ...liveMatch.toObject(),
+      ...fallbackMatch.toObject(),
+      liveStatus: liveMatch ? fallbackMatch.liveStatus : 'live',
       actualResolvedTeamA: actualTeams.teamA || '',
       actualResolvedTeamB: actualTeams.teamB || ''
     });

@@ -4193,7 +4193,7 @@ async function refreshLiveMatchCard({ silent = true } = {}) {
 
     const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
     const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
-    const shouldKeepVisible = Boolean(fallbackGame) && nextMissingPolls < 3;
+    const shouldKeepVisible = Boolean(fallbackGame) && nextMissingPolls < 5;
 
     state.liveMatch = {
       ...state.liveMatch,
@@ -4216,7 +4216,7 @@ async function refreshLiveMatchCard({ silent = true } = {}) {
   } catch (error) {
     const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
     const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
-    const shouldKeepVisible = Boolean(fallbackGame) && nextMissingPolls < 3;
+    const shouldKeepVisible = Boolean(fallbackGame) && nextMissingPolls < 5;
 
     state.liveMatch = {
       ...state.liveMatch,
