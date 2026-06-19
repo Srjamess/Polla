@@ -11,8 +11,7 @@ const {
   fetchLiveFeedPayload,
   getGameMinute,
   isLiveGameStatus,
-  matchGameToMatch,
-  shouldPollLiveFeed
+  matchGameToMatch
 } = require('../utils/liveSync');
 const {
   buildPredictionMap,
@@ -84,66 +83,64 @@ router.get('/', async (req, res) => {
 router.get('/live', async (req, res) => {
   try {
     const matches = await Match.find();
-    if (shouldPollLiveFeed(matches)) {
-      const payload = await fetchLiveFeedPayload().catch(() => null);
-      if (payload) {
-        const games = Array.isArray(payload?.games) ? payload.games : [];
-        const liveCandidates = games
-          .map((game) => {
-            const status = String(game?.time_elapsed || game?.status || '').trim().toLowerCase();
-            const isLiveGame = isLiveGameStatus(status);
-            if (!isLiveGame) return null;
+    const payload = await fetchLiveFeedPayload({ retries: 0, timeoutMs: 3000 }).catch(() => null);
+    if (payload) {
+      const games = Array.isArray(payload?.games) ? payload.games : [];
+      const liveCandidates = games
+        .map((game) => {
+          const status = String(game?.time_elapsed || game?.status || '').trim().toLowerCase();
+          const isLiveGame = isLiveGameStatus(status);
+          if (!isLiveGame) return null;
 
-            const match = matchGameToMatch(game, matches);
-            const liveGamePayload = buildFeedGamePayload(game);
-            const feedMatch = {
-              ...liveGamePayload,
-              liveMinute: liveGamePayload.liveMinute || getGameMinute(game) || '',
-              liveStatus: liveGamePayload.liveStatus || 'live',
-              liveUpdatedAt: new Date()
-            };
+          const match = matchGameToMatch(game, matches);
+          const liveGamePayload = buildFeedGamePayload(game);
+          const feedMatch = {
+            ...liveGamePayload,
+            liveMinute: liveGamePayload.liveMinute || getGameMinute(game) || '',
+            liveStatus: liveGamePayload.liveStatus || 'live',
+            liveUpdatedAt: new Date()
+          };
 
-            let liveMatch = feedMatch;
-            if (match) {
-              const update = buildLiveMatchUpdate(match, game);
-              const base = match.toObject();
-              liveMatch = update
-                ? { ...base, ...update }
-                : {
-                    ...base,
-                    scoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : base.scoreA,
-                    scoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : base.scoreB,
-                    liveScoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : base.liveScoreA,
-                    liveScoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : base.liveScoreB,
-                    liveMinute: base.liveMinute || feedMatch.liveMinute,
-                    liveStatus: feedMatch.liveStatus || base.liveStatus || 'live',
-                    liveUpdatedAt: new Date(),
-                    resultSource: 'live'
-                  };
-            }
+          let liveMatch = feedMatch;
+          if (match) {
+            const update = buildLiveMatchUpdate(match, game);
+            const base = match.toObject();
+            liveMatch = update
+              ? { ...base, ...update }
+              : {
+                  ...base,
+                  scoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : base.scoreA,
+                  scoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : base.scoreB,
+                  liveScoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : base.liveScoreA,
+                  liveScoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : base.liveScoreB,
+                  liveMinute: base.liveMinute || feedMatch.liveMinute,
+                  liveStatus: feedMatch.liveStatus || base.liveStatus || 'live',
+                  liveUpdatedAt: new Date(),
+                  resultSource: 'live'
+                };
+          }
 
-            return {
-              liveMatch,
-              minuteValue: Number.parseInt(liveGamePayload.liveMinute, 10) || 999,
-              updatedAt: game?.updated_at || game?.updatedAt || game?.last_update || game?.datetime || game?.utc_date || game?.date || game?.time || new Date().toISOString()
-            };
-          })
-          .filter(Boolean)
-          .sort((a, b) => {
-            if (b.minuteValue !== a.minuteValue) return b.minuteValue - a.minuteValue;
-            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-          });
+          return {
+            liveMatch,
+            minuteValue: Number.parseInt(liveGamePayload.liveMinute, 10) || 999,
+            updatedAt: game?.updated_at || game?.updatedAt || game?.last_update || game?.datetime || game?.utc_date || game?.date || game?.time || new Date().toISOString()
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          if (b.minuteValue !== a.minuteValue) return b.minuteValue - a.minuteValue;
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
 
-        if (liveCandidates.length) {
-          const actualContext = buildResolutionContext(matches);
-          const actualTeams = resolveMatchTeams(liveCandidates[0].liveMatch, actualContext);
+      if (liveCandidates.length) {
+        const actualContext = buildResolutionContext(matches);
+        const actualTeams = resolveMatchTeams(liveCandidates[0].liveMatch, actualContext);
 
-          return res.json({
-            ...liveCandidates[0].liveMatch,
-            actualResolvedTeamA: actualTeams.teamA || '',
-            actualResolvedTeamB: actualTeams.teamB || ''
-          });
-        }
+        return res.json({
+          ...liveCandidates[0].liveMatch,
+          actualResolvedTeamA: actualTeams.teamA || '',
+          actualResolvedTeamB: actualTeams.teamB || ''
+        });
       }
     }
 
@@ -178,13 +175,47 @@ router.get('/live', async (req, res) => {
     })[0] || null;
 
     if (!liveMatch) {
+      const provisionalWindowMs = 6 * 60 * 60 * 1000;
+      const provisionalLiveMatch = [...matches]
+        .filter((match) => {
+          if (!match || match.resultSet) return false;
+
+          const matchDate = match.matchDate ? new Date(match.matchDate) : null;
+          if (!matchDate || Number.isNaN(matchDate.getTime())) return false;
+          if (matchDate > now) return false;
+          if (now.getTime() - matchDate.getTime() > provisionalWindowMs) return false;
+
+          return true;
+        })
+        .sort((a, b) => new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime())[0] || null;
+
+      if (provisionalLiveMatch) {
+        const actualContext = buildResolutionContext(matches);
+        const actualTeams = resolveMatchTeams(provisionalLiveMatch, actualContext);
+        const base = provisionalLiveMatch.toObject();
+
+        return res.json({
+          ...base,
+          scoreA: Number.isInteger(Number(base.liveScoreA ?? base.scoreA)) ? Number(base.liveScoreA ?? base.scoreA) : 0,
+          scoreB: Number.isInteger(Number(base.liveScoreB ?? base.scoreB)) ? Number(base.liveScoreB ?? base.scoreB) : 0,
+          liveScoreA: Number.isInteger(Number(base.liveScoreA ?? base.scoreA)) ? Number(base.liveScoreA ?? base.scoreA) : 0,
+          liveScoreB: Number.isInteger(Number(base.liveScoreB ?? base.scoreB)) ? Number(base.liveScoreB ?? base.scoreB) : 0,
+          liveMinute: base.liveMinute || 'LIVE',
+          liveStatus: 'live',
+          liveUpdatedAt: new Date(),
+          resultSource: base.resultSource || 'provisional',
+          actualResolvedTeamA: actualTeams.teamA || '',
+          actualResolvedTeamB: actualTeams.teamB || ''
+        });
+      }
+
       return res.json(null);
     }
 
     const actualContext = buildResolutionContext(matches);
     const actualTeams = resolveMatchTeams(liveMatch, actualContext);
 
-    res.json({
+    return res.json({
       ...liveMatch.toObject(),
       actualResolvedTeamA: actualTeams.teamA || '',
       actualResolvedTeamB: actualTeams.teamB || ''

@@ -4003,9 +4003,29 @@ function normalizeLiveFeedTeamName(value) {
 
 function extractLiveGameFromFeed(payload) {
   const games = Array.isArray(payload?.games) ? payload.games : [];
+  const now = new Date();
   const liveGame = games.find((game) => {
     const status = String(game?.time_elapsed || game?.status || '').trim().toLowerCase();
-    return status === 'live' || status.includes('in play') || status.includes('inplay') || status.includes('ongoing');
+    const finished = String(game?.finished || '').trim().toLowerCase();
+    const parsedDate = new Date(String(game?.local_date || game?.date || game?.match_date || game?.datetime || game?.start_time || game?.utc_date || '').trim());
+    const hasStarted = Boolean(parsedDate && !Number.isNaN(parsedDate.getTime()) && parsedDate <= now);
+
+    if (
+      status === 'live' ||
+      status.includes('in play') ||
+      status.includes('inplay') ||
+      status.includes('ongoing') ||
+      status.includes('progress') ||
+      status.includes('half')
+    ) {
+      return true;
+    }
+
+    if (status === 'notstarted' || status === 'finished' || status === 'final' || status === 'ft') {
+      return false;
+    }
+
+    return hasStarted && finished !== 'true';
   });
 
   if (!liveGame) return null;
@@ -4253,14 +4273,31 @@ function isFreshLiveGame(game, maxAgeMs = 12 * 60 * 1000) {
   return Date.now() - updatedTime <= maxAgeMs;
 }
 
+function getLocalProvisionalLiveMatch(matches) {
+  const now = new Date();
+  const maxAgeMs = 6 * 60 * 60 * 1000;
+
+  return [...(matches || [])]
+    .filter((match) => {
+      if (!match || match.resultSet) return false;
+
+      const matchDate = match.matchDate ? new Date(match.matchDate) : null;
+      if (!matchDate || Number.isNaN(matchDate.getTime())) return false;
+      if (matchDate > now) return false;
+      if (now.getTime() - matchDate.getTime() > maxAgeMs) return false;
+      return true;
+    })
+    .sort((a, b) => new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime())[0] || null;
+}
+
 async function fetchLiveMatchFromServer() {
   return apiFetch('/matches/live');
 }
 
 async function fetchLiveMatchFromFeed() {
   const url = 'https://worldcup26.ir/get/games';
-  const retries = 2;
-  const timeoutMs = 8000;
+  const retries = 4;
+  const timeoutMs = 20000;
   let lastError = null;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -4293,101 +4330,128 @@ async function refreshLiveMatchCard({ silent = true } = {}) {
   const liveMatchContainer = document.getElementById('dashboardLiveMatch');
   if (!liveMatchContainer) return null;
 
+  const provisionalLiveMatch = getLocalProvisionalLiveMatch(state.matches);
+  if (provisionalLiveMatch && !state.liveMatch.game) {
+    state.liveMatch = {
+      ...state.liveMatch,
+      game: {
+        ...provisionalLiveMatch,
+        liveStatus: 'live',
+        liveMinute: provisionalLiveMatch.liveMinute || 'LIVE',
+        liveUpdatedAt: provisionalLiveMatch.liveUpdatedAt || new Date()
+      },
+      lastGame: provisionalLiveMatch,
+      loaded: true
+    };
+  }
+
   state.liveMatch.loading = true;
   renderDashboardHeroCards(renderNextMatchCard(state.matches), renderLiveMatchCard(state.liveMatch.game || state.liveMatch.lastGame));
 
-  try {
+  const applyLiveGameUpdate = async (liveGame) => {
+    if (!liveGame) return;
+
+    setLiveMatchCache(liveGame);
+    const nextScore = `${liveGame.scoreA ?? liveGame.liveScoreA ?? ''}-${liveGame.scoreB ?? liveGame.liveScoreB ?? ''}`;
     const previousScore = state.liveMatch.game
       ? `${state.liveMatch.game.scoreA ?? state.liveMatch.game.liveScoreA ?? ''}-${state.liveMatch.game.scoreB ?? state.liveMatch.game.liveScoreB ?? ''}`
       : '';
-    const liveGame = await fetchLiveMatchFromServer();
-    if (liveGame) {
-      setLiveMatchCache(liveGame);
-      const nextScore = `${liveGame.scoreA ?? liveGame.liveScoreA ?? ''}-${liveGame.scoreB ?? liveGame.liveScoreB ?? ''}`;
-      state.liveMatch = {
-        ...state.liveMatch,
-        game: liveGame,
-        lastGame: liveGame,
-        loading: false,
-        error: '',
-        loaded: true,
-        missingPolls: 0
-      };
-      renderDashboardHeroCards(renderNextMatchCard(state.matches), renderLiveMatchCard(liveGame));
-      if (nextScore !== previousScore) {
-        await loadMatches();
-        await refreshLeaderboardIfVisible();
-      }
-      return liveGame;
-    }
-
-    const fallbackLiveGame = await fetchLiveMatchFromFeed().catch(() => null);
-    if (fallbackLiveGame) {
-      setLiveMatchCache(fallbackLiveGame);
-      state.liveMatch = {
-        ...state.liveMatch,
-        game: fallbackLiveGame,
-        lastGame: fallbackLiveGame,
-        loading: false,
-        error: '',
-        loaded: true,
-        missingPolls: 0
-      };
-      renderDashboardHeroCards(renderNextMatchCard(state.matches), renderLiveMatchCard(fallbackLiveGame));
-      return fallbackLiveGame;
-    }
-
-    const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
-    const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
-    const shouldKeepVisible = isFreshLiveGame(fallbackGame) && nextMissingPolls < 5;
 
     state.liveMatch = {
       ...state.liveMatch,
-      game: shouldKeepVisible ? fallbackGame : null,
+      game: liveGame,
+      lastGame: liveGame,
       loading: false,
       error: '',
       loaded: true,
-      missingPolls: nextMissingPolls
+      missingPolls: 0
     };
 
-    if (!shouldKeepVisible) {
-      localStorage.removeItem(state.liveMatchCacheKey);
+    renderDashboardHeroCards(renderNextMatchCard(state.matches), renderLiveMatchCard(liveGame));
+    if (nextScore !== previousScore) {
+      await loadMatches();
+      await refreshLeaderboardIfVisible();
     }
+  };
 
-    renderDashboardHeroCards(
-      renderNextMatchCard(state.matches),
-      shouldKeepVisible ? renderLiveMatchCard(fallbackGame) : ''
-    );
-    return shouldKeepVisible ? fallbackGame : null;
-  } catch (error) {
-    const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
-    const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
-    const shouldKeepVisible = isFreshLiveGame(fallbackGame) && nextMissingPolls < 5;
+  const syncLiveMatch = async () => {
+    try {
+      const liveGame = await fetchLiveMatchFromServer();
+      if (liveGame) {
+        await applyLiveGameUpdate(liveGame);
 
-    state.liveMatch = {
-      ...state.liveMatch,
-      game: shouldKeepVisible ? fallbackGame : null,
-      loading: false,
-      error: error.message || 'No se pudo cargar el marcador en vivo.',
-      loaded: true,
-      missingPolls: nextMissingPolls
-    };
+        if (String(liveGame.resultSource || '').toLowerCase() === 'provisional') {
+          void fetchLiveMatchFromFeed()
+            .then(async (actualLiveGame) => {
+              if (!actualLiveGame || String(actualLiveGame.liveStatus || '').toLowerCase() !== 'live') return;
+              await applyLiveGameUpdate(actualLiveGame);
+            })
+            .catch(() => {});
+        }
 
-    if (!shouldKeepVisible) {
-      localStorage.removeItem(state.liveMatchCacheKey);
+        return;
+      }
+
+      const fallbackLiveGame = await fetchLiveMatchFromFeed().catch(() => null);
+      if (fallbackLiveGame) {
+        await applyLiveGameUpdate(fallbackLiveGame);
+        return;
+      }
+
+      const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
+      const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
+      const shouldKeepVisible = isFreshLiveGame(fallbackGame) && nextMissingPolls < 5;
+
+      state.liveMatch = {
+        ...state.liveMatch,
+        game: shouldKeepVisible ? fallbackGame : null,
+        loading: false,
+        error: '',
+        loaded: true,
+        missingPolls: nextMissingPolls
+      };
+
+      if (!shouldKeepVisible) {
+        localStorage.removeItem(state.liveMatchCacheKey);
+      }
+
+      renderDashboardHeroCards(
+        renderNextMatchCard(state.matches),
+        shouldKeepVisible ? renderLiveMatchCard(fallbackGame) : ''
+      );
+    } catch (error) {
+      const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;
+      const fallbackGame = state.liveMatch.game || state.liveMatch.lastGame || null;
+      const shouldKeepVisible = isFreshLiveGame(fallbackGame) && nextMissingPolls < 5;
+
+      state.liveMatch = {
+        ...state.liveMatch,
+        game: shouldKeepVisible ? fallbackGame : null,
+        loading: false,
+        error: error.message || 'No se pudo cargar el marcador en vivo.',
+        loaded: true,
+        missingPolls: nextMissingPolls
+      };
+
+      if (!shouldKeepVisible) {
+        localStorage.removeItem(state.liveMatchCacheKey);
+      }
+
+      renderDashboardHeroCards(
+        renderNextMatchCard(state.matches),
+        shouldKeepVisible ? renderLiveMatchCard(fallbackGame) : ''
+      );
+      if (!silent) {
+        toast(state.liveMatch.error, 'error');
+      }
+    } finally {
+      state.liveMatch.loading = false;
     }
+  };
 
-    renderDashboardHeroCards(
-      renderNextMatchCard(state.matches),
-      shouldKeepVisible ? renderLiveMatchCard(fallbackGame) : ''
-    );
-    if (!silent) {
-      toast(state.liveMatch.error, 'error');
-    }
-    return shouldKeepVisible ? fallbackGame : null;
-  } finally {
-    state.liveMatch.loading = false;
-  }
+  void syncLiveMatch();
+
+  return state.liveMatch.game || state.liveMatch.lastGame || provisionalLiveMatch || null;
 }
 
 function startLiveMatchPolling() {

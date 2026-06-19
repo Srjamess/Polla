@@ -600,7 +600,7 @@ function buildLiveMatchUpdate(match, game) {
 }
 
 async function syncLiveScores({ silent = true } = {}) {
-  const payload = await fetchLiveFeedPayload();
+  const payload = await fetchLiveFeedPayload({ retries: 4, timeoutMs: 20000 });
   const games = Array.isArray(payload?.games) ? payload.games : [];
   const matches = await Match.find();
   const updates = [];
