@@ -6,6 +6,15 @@ const { recalculateAllScores } = require('../utils/scoring');
 const { getAppSettings } = require('../utils/appSettings');
 const { ensureUserEntries } = require('../utils/entries');
 const {
+  buildLiveMatchUpdate,
+  buildFeedGamePayload,
+  fetchLiveFeedPayload,
+  getGameMinute,
+  isLiveGameStatus,
+  matchGameToMatch,
+  shouldPollLiveFeed
+} = require('../utils/liveSync');
+const {
   buildPredictionMap,
   buildResolutionContext,
   resolveMatchTeams,
@@ -75,10 +84,86 @@ router.get('/', async (req, res) => {
 router.get('/live', async (req, res) => {
   try {
     const matches = await Match.find();
+    if (shouldPollLiveFeed(matches)) {
+      const payload = await fetchLiveFeedPayload().catch(() => null);
+      if (payload) {
+        const games = Array.isArray(payload?.games) ? payload.games : [];
+        const liveCandidates = games
+          .map((game) => {
+            const status = String(game?.time_elapsed || game?.status || '').trim().toLowerCase();
+            const isLiveGame = isLiveGameStatus(status);
+            if (!isLiveGame) return null;
+
+            const match = matchGameToMatch(game, matches);
+            const liveGamePayload = buildFeedGamePayload(game);
+            const feedMatch = {
+              ...liveGamePayload,
+              liveMinute: liveGamePayload.liveMinute || getGameMinute(game) || '',
+              liveStatus: liveGamePayload.liveStatus || 'live',
+              liveUpdatedAt: new Date()
+            };
+
+            let liveMatch = feedMatch;
+            if (match) {
+              const update = buildLiveMatchUpdate(match, game);
+              const base = match.toObject();
+              liveMatch = update
+                ? { ...base, ...update }
+                : {
+                    ...base,
+                    scoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : base.scoreA,
+                    scoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : base.scoreB,
+                    liveScoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : base.liveScoreA,
+                    liveScoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : base.liveScoreB,
+                    liveMinute: base.liveMinute || feedMatch.liveMinute,
+                    liveStatus: feedMatch.liveStatus || base.liveStatus || 'live',
+                    liveUpdatedAt: new Date(),
+                    resultSource: 'live'
+                  };
+            }
+
+            return {
+              liveMatch,
+              minuteValue: Number.parseInt(liveGamePayload.liveMinute, 10) || 999,
+              updatedAt: game?.updated_at || game?.updatedAt || game?.last_update || game?.datetime || game?.utc_date || game?.date || game?.time || new Date().toISOString()
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => {
+            if (b.minuteValue !== a.minuteValue) return b.minuteValue - a.minuteValue;
+            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+          });
+
+        if (liveCandidates.length) {
+          const actualContext = buildResolutionContext(matches);
+          const actualTeams = resolveMatchTeams(liveCandidates[0].liveMatch, actualContext);
+
+          return res.json({
+            ...liveCandidates[0].liveMatch,
+            actualResolvedTeamA: actualTeams.teamA || '',
+            actualResolvedTeamB: actualTeams.teamB || ''
+          });
+        }
+      }
+    }
+
     const now = new Date();
-    const liveWindowMs = 4 * 60 * 1000;
+    const liveWindowMs = 12 * 60 * 1000;
+    const liveMatchWindowMs = 6 * 60 * 60 * 1000;
+    const futureGraceMs = 2 * 60 * 60 * 1000;
     const liveMatches = matches.filter((match) => {
-      if (String(match.liveStatus || '').toLowerCase() !== 'live') return false;
+      const liveStatus = String(match.liveStatus || '').toLowerCase();
+      const matchDate = match.matchDate ? new Date(match.matchDate) : null;
+      const hasValidDate = Boolean(matchDate && !Number.isNaN(matchDate.getTime()));
+      const hasStarted = Boolean(hasValidDate && matchDate <= now);
+      const liveScoreA = Number(match.liveScoreA ?? match.scoreA);
+      const liveScoreB = Number(match.liveScoreB ?? match.scoreB);
+      const hasLiveScore = Number.isInteger(liveScoreA) && Number.isInteger(liveScoreB);
+
+      if (!hasValidDate) return false;
+      if (matchDate.getTime() < now.getTime() - liveMatchWindowMs) return false;
+      if (matchDate.getTime() > now.getTime() + futureGraceMs) return false;
+      if (liveStatus !== 'live' && !(hasStarted && !match.resultSet && hasLiveScore)) return false;
 
       const updatedAt = match.liveUpdatedAt || match.updatedAt || match.createdAt;
       const updatedTime = updatedAt ? new Date(updatedAt).getTime() : null;

@@ -176,6 +176,9 @@ const teamFlags = {
 };
 
 const liveTeamNameMap = {
+  'Bosnia and Herzegovina': 'Bosnia y Herzegovina',
+  Curacao: 'Curazao',
+  'Curaçao': 'Curazao',
   Algeria: 'Argelia',
   Argentina: 'Argentina',
   Australia: 'Australia',
@@ -234,6 +237,18 @@ Object.assign(liveTeamNameMap, {
   'Czech Republic': 'Chequia'
 });
 
+Object.assign(liveTeamNameMap, {
+  'Bosnia and Herzegovina': 'Bosnia y Herzegovina',
+  'Sudafrica': 'SudÃ¡frica',
+  'Cape Verde': 'Islas de Cabo Verde',
+  'Cape Verde Islands': 'Islas de Cabo Verde',
+  'Cabo Verde': 'Islas de Cabo Verde',
+  'New Zealand': 'Nueva Zelanda',
+  Curacao: 'Curazao',
+  'Curaçao': 'Curazao',
+  Ghana: 'Ghana'
+});
+
 function getLiveMatchTeamName(match, side) {
   const resolvedKey = side === 'away'
     ? String(match?.actualResolvedTeamB || match?.teamB || match?.away_team_name_en || match?.away_team_label || '').trim()
@@ -244,6 +259,8 @@ function getLiveMatchTeamName(match, side) {
   const fallbackSpanish = side === 'away'
     ? String(match?.away_team_name_es || match?.away_team_name_fa || '').trim()
     : String(match?.home_team_name_es || match?.home_team_name_fa || '').trim();
+
+  if (resolvedKey === 'South Korea') return 'Corea del Sur';
 
   return resolvedKey || liveTeamNameMap[feedKey] || fallbackSpanish || feedKey;
 }
@@ -3961,7 +3978,6 @@ function formatLiveMinute(game) {
     game?.elapsed_minute,
     game?.elapsed_minutes,
     game?.minutes,
-    game?.time,
     game?.current_minute,
     game?.time_elapsed_minute
   ];
@@ -3970,11 +3986,77 @@ function formatLiveMinute(game) {
     if (value == null || value === '') continue;
     const text = String(value).trim();
     if (!text) continue;
-    if (/^\d+$/.test(text)) return `${text}'`;
-    if (/^\d+'$/.test(text)) return text;
+    if (/\d/.test(text)) return text;
   }
 
   return "LIVE";
+}
+
+function normalizeLiveFeedTeamName(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text === 'South Korea') return 'Republica de Corea';
+  if (text === 'Curaçao') return 'Curazao';
+  if (/^(winner|runner-up|loser)\s+/i.test(text)) return '';
+  return liveTeamNameMap[text] || text;
+}
+
+function extractLiveGameFromFeed(payload) {
+  const games = Array.isArray(payload?.games) ? payload.games : [];
+  const liveGame = games.find((game) => {
+    const status = String(game?.time_elapsed || game?.status || '').trim().toLowerCase();
+    return status === 'live' || status.includes('in play') || status.includes('inplay') || status.includes('ongoing');
+  });
+
+  if (!liveGame) return null;
+
+  const homeTeam = normalizeLiveFeedTeamName(
+    liveGame.home_team_name_en ||
+    liveGame.home_team_label ||
+    liveGame.home_team_name_fa ||
+    liveGame.home_team_name_es ||
+    liveGame.home_name ||
+    liveGame.home ||
+    liveGame.local_name
+  );
+  const awayTeam = normalizeLiveFeedTeamName(
+    liveGame.away_team_name_en ||
+    liveGame.away_team_label ||
+    liveGame.away_team_name_fa ||
+    liveGame.away_team_name_es ||
+    liveGame.away_name ||
+    liveGame.away ||
+    liveGame.visitor_name
+  );
+
+  return {
+    ...liveGame,
+    teamA: homeTeam,
+    teamB: awayTeam,
+    home_team_name_en: homeTeam,
+    away_team_name_en: awayTeam,
+    home_team_name_es: homeTeam,
+    away_team_name_es: awayTeam,
+    home_team_label: homeTeam,
+    away_team_label: awayTeam,
+    scoreA: Number(liveGame.home_score),
+    scoreB: Number(liveGame.away_score),
+    liveScoreA: Number(liveGame.home_score),
+    liveScoreB: Number(liveGame.away_score),
+    liveMinute: String(
+      liveGame.minute ||
+      liveGame.live_minute ||
+      liveGame.elapsed_minute ||
+      liveGame.elapsed_minutes ||
+      liveGame.minutes ||
+      liveGame.current_minute ||
+      liveGame.time_elapsed_minute ||
+      liveGame.time_elapsed ||
+      ''
+    ).trim(),
+    liveStatus: String(liveGame.time_elapsed || liveGame.status || '').trim().toLowerCase() === 'live' ? 'live' : '',
+    liveUpdatedAt: new Date()
+  };
 }
 
 function getLiveMatchScore(match) {
@@ -3990,7 +4072,7 @@ function getLiveMatchScore(match) {
     };
   }
 
-  if (hasStarted && liveStatus === 'live') {
+  if (liveStatus === 'live') {
     const liveScoreA = Number(match.scoreA);
     const liveScoreB = Number(match.scoreB);
     if (Number.isInteger(liveScoreA) && Number.isInteger(liveScoreB)) {
@@ -4012,7 +4094,7 @@ function getLiveMatchScore(match) {
 
   const homeScore = Number(match.home_score);
   const awayScore = Number(match.away_score);
-  if (Number.isInteger(homeScore) && Number.isInteger(awayScore)) {
+  if (hasStarted && Number.isInteger(homeScore) && Number.isInteger(awayScore)) {
     return {
       scoreA: homeScore,
       scoreB: awayScore
@@ -4027,6 +4109,9 @@ function renderLiveMatchCard(match) {
 
   const homeTeam = getLiveMatchTeamName(match, 'home');
   const awayTeam = getLiveMatchTeamName(match, 'away');
+  const isPlaceholderTeam = (value) => /^(winner|runner-up|loser)\s+/i.test(String(value || '').trim()) || /match\s+\d+/i.test(String(value || '').trim());
+  const homeLabel = homeTeam || 'Por definir';
+  const awayLabel = awayTeam || 'Por definir';
   const score = getLiveMatchScore(match);
   const homeScore = score ? String(score.scoreA) : '';
   const awayScore = score ? String(score.scoreB) : '';
@@ -4040,16 +4125,16 @@ function renderLiveMatchCard(match) {
       </div>
       <div class="next-match-layout">
         <div class="next-match-team">
-          ${renderFlag(homeTeam)}
-          <span>${escapeHtml(homeTeam)}</span>
+          ${isPlaceholderTeam(homeLabel) ? '<span class="flag-placeholder empty"></span>' : renderFlag(homeLabel)}
+          <span>${escapeHtml(isPlaceholderTeam(homeLabel) ? 'Por definir' : homeLabel)}</span>
         </div>
         <div class="next-match-center">
           <strong>${escapeHtml(`${homeScore} - ${awayScore}`)}</strong>
           <span>${escapeHtml(minute)}</span>
         </div>
         <div class="next-match-team">
-          ${renderFlag(awayTeam)}
-          <span>${escapeHtml(awayTeam)}</span>
+          ${isPlaceholderTeam(awayLabel) ? '<span class="flag-placeholder empty"></span>' : renderFlag(awayLabel)}
+          <span>${escapeHtml(isPlaceholderTeam(awayLabel) ? 'Por definir' : awayLabel)}</span>
         </div>
       </div>
     </section>
@@ -4139,7 +4224,7 @@ function hydrateLiveMatchFromCache() {
   const cached = getLiveMatchCache();
   if (!cached?.game || !cached.savedAt) return false;
 
-  const maxAgeMs = 5 * 60 * 1000;
+  const maxAgeMs = 12 * 60 * 1000;
   if (Date.now() - Number(cached.savedAt) > maxAgeMs) return false;
 
   state.liveMatch = {
@@ -4155,7 +4240,7 @@ function hydrateLiveMatchFromCache() {
   return true;
 }
 
-function isFreshLiveGame(game, maxAgeMs = 4 * 60 * 1000) {
+function isFreshLiveGame(game, maxAgeMs = 12 * 60 * 1000) {
   if (!game) return false;
   if (String(game.liveStatus || '').toLowerCase() !== 'live') return false;
 
@@ -4170,6 +4255,38 @@ function isFreshLiveGame(game, maxAgeMs = 4 * 60 * 1000) {
 
 async function fetchLiveMatchFromServer() {
   return apiFetch('/matches/live');
+}
+
+async function fetchLiveMatchFromFeed() {
+  const url = 'https://worldcup26.ir/get/games';
+  const retries = 2;
+  const timeoutMs = 8000;
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+      clearTimeout(timer);
+      if (!response.ok) {
+        throw new Error(`Live feed error ${response.status}`);
+      }
+
+      const payload = await response.json();
+      return extractLiveGameFromFeed(payload);
+    } catch (error) {
+      clearTimeout(timer);
+      lastError = error;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+
+  throw lastError || new Error('Live feed unavailable.');
 }
 
 async function refreshLiveMatchCard({ silent = true } = {}) {
@@ -4202,6 +4319,22 @@ async function refreshLiveMatchCard({ silent = true } = {}) {
         await refreshLeaderboardIfVisible();
       }
       return liveGame;
+    }
+
+    const fallbackLiveGame = await fetchLiveMatchFromFeed().catch(() => null);
+    if (fallbackLiveGame) {
+      setLiveMatchCache(fallbackLiveGame);
+      state.liveMatch = {
+        ...state.liveMatch,
+        game: fallbackLiveGame,
+        lastGame: fallbackLiveGame,
+        loading: false,
+        error: '',
+        loaded: true,
+        missingPolls: 0
+      };
+      renderDashboardHeroCards(renderNextMatchCard(state.matches), renderLiveMatchCard(fallbackLiveGame));
+      return fallbackLiveGame;
     }
 
     const nextMissingPolls = Number(state.liveMatch.missingPolls || 0) + 1;

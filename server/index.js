@@ -11,7 +11,8 @@ const entryRoutes = require('./routes/entries');
 const matchRoutes = require('./routes/matches');
 const predictionRoutes = require('./routes/predictions');
 const leaderboardRoutes = require('./routes/leaderboard');
-const { syncLiveScores } = require('./utils/liveSync');
+const Match = require('./models/Match');
+const { syncLiveScores, shouldPollLiveFeed } = require('./utils/liveSync');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -70,6 +71,19 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'client', 'index.html'));
 });
 
+async function runLiveSyncIfNeeded() {
+  try {
+    const matches = await Match.find({}, { matchDate: 1, liveStatus: 1, resultSet: 1, liveUpdatedAt: 1, updatedAt: 1, createdAt: 1 }).lean();
+    if (!shouldPollLiveFeed(matches)) {
+      return;
+    }
+
+    await syncLiveScores({ silent: true });
+  } catch (error) {
+    console.warn(`Live sync skipped: ${error.message}`);
+  }
+}
+
 mongoose
   .connect(process.env.MONGO_URI)
   .then(async () => {
@@ -86,13 +100,9 @@ mongoose
     app.listen(PORT, () => {
       console.log(`Polla Mundialista running on http://localhost:${PORT}`);
     });
-    void syncLiveScores({ silent: true }).catch((error) => {
-      console.warn(`Live sync skipped: ${error.message}`);
-    });
+    void runLiveSyncIfNeeded();
     setInterval(() => {
-      void syncLiveScores({ silent: true }).catch((error) => {
-        console.warn(`Live sync skipped: ${error.message}`);
-      });
+      void runLiveSyncIfNeeded();
     }, 60 * 1000);
   })
   .catch((error) => {
