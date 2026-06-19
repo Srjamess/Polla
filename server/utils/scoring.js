@@ -38,30 +38,42 @@ function calculateMatchPoints(prediction, match, options = {}) {
 
 async function recalculateAllScores() {
   const [matches, predictions, users, settings] = await Promise.all([
-    Match.find(),
-    Prediction.find(),
-    User.find().select('_id predictedWorstTeam'),
+    Match.find().lean(),
+    Prediction.find().lean(),
+    User.find().select('_id username avatarPreset avatarImage predictedWorstTeam isPaid').lean(),
     getAppSettings()
   ]);
 
   const matchById = new Map(matches.map((match) => [String(match._id), match]));
+  const predictionWrites = [];
 
-  await Promise.all(
-    predictions.map(async (prediction) => {
-      const match = matchById.get(String(prediction.match));
-      const scoreState = getMatchScoreState(match, { includeLive: true });
+  predictions.forEach((prediction) => {
+    const match = matchById.get(String(prediction.match));
+    const scoreState = getMatchScoreState(match, { includeLive: true });
+    const nextPoints = match && scoreState.played ? calculateMatchPoints(prediction, match) : 0;
+    const nextScored = Boolean(match && scoreState.played);
 
-      if (!match || !scoreState.played) {
-        prediction.points = 0;
-        prediction.scored = false;
-      } else {
-        prediction.points = calculateMatchPoints(prediction, match);
-        prediction.scored = true;
-      }
+    if (Number(prediction.points || 0) !== nextPoints || Boolean(prediction.scored) !== nextScored) {
+      predictionWrites.push({
+        updateOne: {
+          filter: { _id: prediction._id },
+          update: {
+            $set: {
+              points: nextPoints,
+              scored: nextScored
+            }
+          }
+        }
+      });
+    }
 
-      await prediction.save();
-    })
-  );
+    prediction.points = nextPoints;
+    prediction.scored = nextScored;
+  });
+
+  if (predictionWrites.length) {
+    await Prediction.bulkWrite(predictionWrites, { ordered: false });
+  }
 
   const userContexts = new Map();
   await Promise.all(
@@ -71,10 +83,9 @@ async function recalculateAllScores() {
     })
   );
 
-  const refreshedPredictions = await Prediction.find();
   const predictionsByEntry = new Map();
 
-  refreshedPredictions.forEach((prediction) => {
+  predictions.forEach((prediction) => {
     const entryId = prediction.entry ? String(prediction.entry) : '';
 
     if (entryId) {
@@ -84,13 +95,14 @@ async function recalculateAllScores() {
   });
 
   const actualContext = buildResolutionContext(matches);
-  const totalsByEntry = new Map();
-  const totalsByUser = new Map(users.map((user) => [String(user._id), 0]));
+  const entryWrites = [];
+  const userWrites = [];
 
   for (const user of users) {
     const userId = String(user._id);
     const context = userContexts.get(userId);
     const entries = context?.entries || [];
+    let userTotal = 0;
 
     for (const entry of entries) {
       const entryId = String(entry._id);
@@ -108,22 +120,39 @@ async function recalculateAllScores() {
         calculateKnockoutBonus(matches, actualContext, predictedContext) +
         (settings.actualWorstTeam && String(entry.predictedWorstTeam || '') === String(settings.actualWorstTeam) ? 5 : 0);
 
-      totalsByEntry.set(entryId, entryTotal);
-      totalsByUser.set(userId, (totalsByUser.get(userId) || 0) + entryTotal);
+      userTotal += entryTotal;
+
+      if (Number(entry.totalPoints || 0) !== entryTotal) {
+        entryWrites.push({
+          updateOne: {
+            filter: { _id: entry._id },
+            update: {
+              $set: { totalPoints: entryTotal }
+            }
+          }
+        });
+      }
+    }
+
+    if (Number(user.totalPoints || 0) !== userTotal) {
+      userWrites.push({
+        updateOne: {
+          filter: { _id: user._id },
+          update: {
+            $set: { totalPoints: userTotal }
+          }
+        }
+      });
     }
   }
 
-  await Promise.all(
-    [...totalsByEntry.entries()].map(([entryId, totalPoints]) =>
-      Entry.findByIdAndUpdate(entryId, { totalPoints })
-    )
-  );
+  if (entryWrites.length) {
+    await Entry.bulkWrite(entryWrites, { ordered: false });
+  }
 
-  await Promise.all(
-    [...totalsByUser.entries()].map(([userId, totalPoints]) =>
-      User.findByIdAndUpdate(userId, { totalPoints })
-    )
-  );
+  if (userWrites.length) {
+    await User.bulkWrite(userWrites, { ordered: false });
+  }
 }
 
 module.exports = { calculateMatchPoints, recalculateAllScores };
