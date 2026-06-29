@@ -2776,6 +2776,17 @@ function renderNextMatchCard(matches) {
 
   if (!nextMatch) return '';
 
+  const teamA = nextMatch.actualResolvedTeamA
+    || nextMatch.predictedResolvedTeamA
+    || nextMatch.teamA
+    || prettySourceLabel(nextMatch.sourceA)
+    || 'Por definir';
+  const teamB = nextMatch.actualResolvedTeamB
+    || nextMatch.predictedResolvedTeamB
+    || nextMatch.teamB
+    || prettySourceLabel(nextMatch.sourceB)
+    || 'Por definir';
+
   const kickoff = new Intl.DateTimeFormat('es-CO', {
     hour: '2-digit',
     minute: '2-digit'
@@ -2798,16 +2809,16 @@ function renderNextMatchCard(matches) {
       </div>
       <div class="next-match-layout">
         <div class="next-match-team">
-          ${renderFlag(nextMatch.teamA)}
-          <span>${escapeHtml(nextMatch.teamA)}</span>
+          ${renderFlag(teamA)}
+          <span>${escapeHtml(teamA)}</span>
         </div>
         <div class="next-match-center">
           <strong>${escapeHtml(kickoff)}</strong>
           <span>${escapeHtml(dateMeta)} · ${escapeHtml(groupMeta)}</span>
         </div>
         <div class="next-match-team">
-          ${renderFlag(nextMatch.teamB)}
-          <span>${escapeHtml(nextMatch.teamB)}</span>
+          ${renderFlag(teamB)}
+          <span>${escapeHtml(teamB)}</span>
         </div>
       </div>
     </section>
