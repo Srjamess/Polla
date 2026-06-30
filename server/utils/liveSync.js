@@ -1,11 +1,16 @@
 const Match = require('../models/Match');
 const { recalculateAllScores } = require('./scoring');
+const {
+  buildResolutionContext,
+  resolveMatchTeams
+} = require('./tournament');
 
 const LIVE_FEED_URL = 'https://worldcup26.ir/get/games';
 const LIVE_FEED_TIMEOUT_MS = 8000;
 const LIVE_FEED_RETRIES = 2;
 const LIVE_WINDOW_MS = 6 * 60 * 60 * 1000;
 const LIVE_FUTURE_GRACE_MS = 2 * 60 * 60 * 1000;
+let liveSyncInFlight = null;
 
 const LIVE_TEAM_NAME_MAP = {
   Algeria: 'Argelia',
@@ -454,10 +459,14 @@ async function fetchLiveFeedPayload({ retries = LIVE_FEED_RETRIES, timeoutMs = L
   throw lastError || new Error('Live feed unavailable.');
 }
 
-function collectMatchNames(match) {
+function collectMatchNames(match, context = null) {
+  const resolvedTeams = context ? resolveMatchTeams(match, context) : null;
+
   return [
     match?.teamA,
     match?.teamB,
+    resolvedTeams?.teamA,
+    resolvedTeams?.teamB,
     match?.actualResolvedTeamA,
     match?.actualResolvedTeamB,
     match?.predictedResolvedTeamA,
@@ -468,7 +477,7 @@ function collectMatchNames(match) {
     .filter(Boolean);
 }
 
-function matchGameToMatch(game, matches) {
+function matchGameToMatch(game, matches, context = null) {
   const homeName = normalizeText(getFeedTeamName(game, 'home'));
   const awayName = normalizeText(getFeedTeamName(game, 'away'));
   const gameDate = parseGameDate(game);
@@ -477,7 +486,7 @@ function matchGameToMatch(game, matches) {
   let bestScore = 0;
 
   matches.forEach((match) => {
-    const localNames = collectMatchNames(match);
+    const localNames = collectMatchNames(match, context);
     const teamMatch =
       (localNames.includes(homeName) && localNames.includes(awayName)) ||
       (localNames.includes(awayName) && localNames.includes(homeName));
@@ -600,13 +609,19 @@ function buildLiveMatchUpdate(match, game) {
 }
 
 async function syncLiveScores({ silent = true } = {}) {
+  if (liveSyncInFlight) {
+    return liveSyncInFlight;
+  }
+
+  liveSyncInFlight = (async () => {
   const payload = await fetchLiveFeedPayload({ retries: 4, timeoutMs: 20000 });
   const games = Array.isArray(payload?.games) ? payload.games : [];
   const matches = await Match.find();
+  const actualContext = buildResolutionContext(matches);
   const updates = [];
 
   games.forEach((game) => {
-    const match = matchGameToMatch(game, matches);
+    const match = matchGameToMatch(game, matches, actualContext);
     if (!match) return;
 
     if (match.resultSet && String(match.resultSource || '') !== 'live') {
@@ -641,6 +656,13 @@ async function syncLiveScores({ silent = true } = {}) {
   }
 
   return { updated: updates.length };
+  })();
+
+  try {
+    return await liveSyncInFlight;
+  } finally {
+    liveSyncInFlight = null;
+  }
 }
 
 module.exports = {

@@ -105,7 +105,7 @@ mongoose
     void runLiveSyncIfNeeded();
     setInterval(() => {
       void runLiveSyncIfNeeded();
-    }, 60 * 1000);
+    }, 15 * 1000);
   })
   .catch((error) => {
     console.error('MongoDB connection failed:', error.message);

@@ -3015,58 +3015,68 @@ function renderFixture(matches, myPredictions = []) {
   const bracketSubtitle = state.bracketTab === 'real'
     ? 'Resultados oficiales del torneo'
     : 'Como avanzaria el torneo segun tus predicciones';
+  if (state.activeView === 'bracket') {
+    const matchesByCode = new Map(
+      matches
+        .filter((match) => match.code)
+        .map((match) => [String(match.code).toUpperCase(), match])
+    );
+    buildClientPredictionResolution(matches);
 
-  knockoutBoard.innerHTML = `
-    <section class="screen-section bracket-panel">
-      <div class="bracket-view-header">
-        <div class="bracket-view-tabs" role="tablist" aria-label="Vistas de eliminatoria">
-          <button class="bracket-view-tab ${state.bracketTab === 'real' ? 'is-active' : ''}" type="button" data-bracket-tab="real" role="tab" aria-selected="${state.bracketTab === 'real' ? 'true' : 'false'}">Clasificacion real</button>
-          <button class="bracket-view-tab ${state.bracketTab === 'predicted' ? 'is-active' : ''}" type="button" data-bracket-tab="predicted" role="tab" aria-selected="${state.bracketTab === 'predicted' ? 'true' : 'false'}">Mis predicciones</button>
+    knockoutBoard.innerHTML = `
+      <section class="screen-section bracket-panel">
+        <div class="bracket-view-header">
+          <div class="bracket-view-tabs" role="tablist" aria-label="Vistas de eliminatoria">
+            <button class="bracket-view-tab ${state.bracketTab === 'real' ? 'is-active' : ''}" type="button" data-bracket-tab="real" role="tab" aria-selected="${state.bracketTab === 'real' ? 'true' : 'false'}">Clasificacion real</button>
+            <button class="bracket-view-tab ${state.bracketTab === 'predicted' ? 'is-active' : ''}" type="button" data-bracket-tab="predicted" role="tab" aria-selected="${state.bracketTab === 'predicted' ? 'true' : 'false'}">Mis predicciones</button>
+          </div>
+          <p class="bracket-view-subtitle" id="bracketViewSubtitle">${escapeHtml(bracketSubtitle)}</p>
         </div>
-        <p class="bracket-view-subtitle" id="bracketViewSubtitle">${escapeHtml(bracketSubtitle)}</p>
-      </div>
 
-      <div id="bracket-real" data-bracket-view="real" style="display: ${state.bracketTab === 'real' ? 'block' : 'none'};">
-        ${renderConvergentBracket(
-          leftRoundOf32,
-          leftRoundOf16,
-          leftQuarterfinals,
-          orderByCode(semifinals, ['SF-1']),
-          finalMatch,
-          thirdPlaceMatch,
-          orderByCode(semifinals, ['SF-2']),
-          rightQuarterfinals,
-          rightRoundOf16,
-          rightRoundOf32,
-          groupTables,
-          groupStatus,
-          matchesByCode,
-          'real'
-        )}
-      </div>
+        <div id="bracket-real" data-bracket-view="real" style="display: ${state.bracketTab === 'real' ? 'block' : 'none'};">
+          ${renderConvergentBracket(
+            leftRoundOf32,
+            leftRoundOf16,
+            leftQuarterfinals,
+            orderByCode(semifinals, ['SF-1']),
+            finalMatch,
+            thirdPlaceMatch,
+            orderByCode(semifinals, ['SF-2']),
+            rightQuarterfinals,
+            rightRoundOf16,
+            rightRoundOf32,
+            groupTables,
+            groupStatus,
+            matchesByCode,
+            'real'
+          )}
+        </div>
 
-      <div id="bracket-predicciones" data-bracket-view="predicted" style="display: ${state.bracketTab === 'predicted' ? 'block' : 'none'};">
-        ${renderConvergentBracket(
-          leftRoundOf32,
-          leftRoundOf16,
-          leftQuarterfinals,
-          orderByCode(semifinals, ['SF-1']),
-          finalMatch,
-          thirdPlaceMatch,
-          orderByCode(semifinals, ['SF-2']),
-          rightQuarterfinals,
-          rightRoundOf16,
-          rightRoundOf32,
-          groupTables,
-          groupStatus,
-          matchesByCode,
-          'predicted'
-        )}
-      </div>
-    </section>
-  `;
+        <div id="bracket-predicciones" data-bracket-view="predicted" style="display: ${state.bracketTab === 'predicted' ? 'block' : 'none'};">
+          ${renderConvergentBracket(
+            leftRoundOf32,
+            leftRoundOf16,
+            leftQuarterfinals,
+            orderByCode(semifinals, ['SF-1']),
+            finalMatch,
+            thirdPlaceMatch,
+            orderByCode(semifinals, ['SF-2']),
+            rightQuarterfinals,
+            rightRoundOf16,
+            rightRoundOf32,
+            groupTables,
+            groupStatus,
+            matchesByCode,
+            'predicted'
+          )}
+        </div>
+      </section>
+    `;
 
-  updateBracketView();
+    updateBracketView();
+  } else {
+    knockoutBoard.innerHTML = '<section class="screen-section bracket-panel"></section>';
+  }
   syncPredictionsViewerModal();
   groupsBoard.classList.toggle('hidden',      state.activeView !== 'standings');
   matchesBoard.classList.toggle('hidden',     state.activeView !== 'matches');
@@ -4546,7 +4556,7 @@ function startLiveMatchPolling() {
   state.liveMatchPollingId = window.setInterval(() => {
     if (document.hidden) return;
     refreshLiveMatchCard({ silent: true });
-  }, 60000);
+  }, 15000);
 
   window.addEventListener('beforeunload', () => {
     if (state.liveMatchPollingId) {
@@ -5315,15 +5325,11 @@ async function loadMatches() {
 async function initDashboardPage() {
   if (!document.getElementById('groupsBoard')) return;
   if (!(await requireAuth())) return;
-  try {
-    await syncEntriesFromServer({ silent: true });
-  } catch {}
+  void syncEntriesFromServer({ silent: true }).catch(() => {});
 
   if (state.user?.isAdmin) {
-    try {
-      await fetchAdminSettings({ silent: true });
-      await fetchAdminUsers({ silent: true });
-    } catch {}
+    void fetchAdminSettings({ silent: true }).catch(() => {});
+    void fetchAdminUsers({ silent: true }).catch(() => {});
   }
 
   const requestedView = new URLSearchParams(window.location.search).get('view');
@@ -5541,10 +5547,10 @@ async function initDashboardPage() {
   syncActiveViewControls();
   hydrateLiveMatchFromCache();
   if (leaderboardList && leaderboardEmptyState) {
-    void loadLeaderboard(leaderboardList, leaderboardEmptyState, { silent: true });
+    void loadLeaderboard(leaderboardList, leaderboardEmptyState, { silent: true }).catch(() => {});
   }
   startLiveMatchPolling();
-  await loadMatches();
+  void loadMatches().catch(() => {});
   void refreshLiveMatchCard({ silent: true });
 }
 
@@ -5818,14 +5824,10 @@ async function initLeaderboardPage() {
   const emptyState = document.getElementById('emptyLeaderboard');
   if (!list) return;
   if (!(await requireAuth())) return;
-  try {
-    await syncEntriesFromServer({ silent: true });
-  } catch {}
+  void syncEntriesFromServer({ silent: true }).catch(() => {});
 
   if (state.user?.isAdmin) {
-    try {
-      await fetchAdminSettings({ silent: true });
-    } catch {}
+    void fetchAdminSettings({ silent: true }).catch(() => {});
   }
 
   setupSharedLayout();
@@ -5833,7 +5835,7 @@ async function initLeaderboardPage() {
   setupLeaderboardHeroPanel();
   setLeaderboardHeroPanelExpanded(false);
 
-  await loadLeaderboard(list, emptyState);
+  void loadLeaderboard(list, emptyState).catch(() => {});
 
   const openLeaderboardEntryPredictions = (entryNode) => {
     const entryId = String(entryNode?.dataset.entryId || '').trim();

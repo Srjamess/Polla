@@ -83,16 +83,45 @@ router.get('/', async (req, res) => {
 router.get('/live', async (req, res) => {
   try {
     const matches = await Match.find();
+    const actualContext = buildResolutionContext(matches);
     const payload = await fetchLiveFeedPayload({ retries: 0, timeoutMs: 3000 }).catch(() => null);
     if (payload) {
+      const persistLiveUpdate = async (match, game, liveGamePayload, feedMatch) => {
+        const update = buildLiveMatchUpdate(match, game);
+        if (!update) return { ...match.toObject(), ...feedMatch };
+
+        const hasChanges = Object.entries(update).some(([key, value]) => {
+          if (value === null) return match[key] !== null && match[key] !== undefined;
+          if (value instanceof Date) {
+            const current = match[key] ? new Date(match[key]).getTime() : null;
+            return current !== value.getTime();
+          }
+          return String(match[key] ?? '') !== String(value);
+        });
+
+        if (hasChanges) {
+          Object.assign(match, update);
+          await match.save();
+          await recalculateAllScores();
+        }
+
+        return {
+          ...match.toObject(),
+          ...feedMatch,
+          scoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : match.scoreA,
+          scoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : match.scoreB,
+          liveScoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : match.liveScoreA,
+          liveScoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : match.liveScoreB
+        };
+      };
+
       const games = Array.isArray(payload?.games) ? payload.games : [];
-      const liveCandidates = games
-        .map((game) => {
+      const liveCandidates = (await Promise.all(games.map(async (game) => {
           const status = String(game?.time_elapsed || game?.status || '').trim().toLowerCase();
           const isLiveGame = isLiveGameStatus(status);
           if (!isLiveGame) return null;
 
-          const match = matchGameToMatch(game, matches);
+          const match = matchGameToMatch(game, matches, actualContext);
           const liveGamePayload = buildFeedGamePayload(game);
           const feedMatch = {
             ...liveGamePayload,
@@ -103,21 +132,7 @@ router.get('/live', async (req, res) => {
 
           let liveMatch = feedMatch;
           if (match) {
-            const update = buildLiveMatchUpdate(match, game);
-            const base = match.toObject();
-            liveMatch = update
-              ? { ...base, ...update }
-              : {
-                  ...base,
-                  scoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : base.scoreA,
-                  scoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : base.scoreB,
-                  liveScoreA: Number.isInteger(liveGamePayload.scoreA) ? liveGamePayload.scoreA : base.liveScoreA,
-                  liveScoreB: Number.isInteger(liveGamePayload.scoreB) ? liveGamePayload.scoreB : base.liveScoreB,
-                  liveMinute: base.liveMinute || feedMatch.liveMinute,
-                  liveStatus: feedMatch.liveStatus || base.liveStatus || 'live',
-                  liveUpdatedAt: new Date(),
-                  resultSource: 'live'
-                };
+            liveMatch = await persistLiveUpdate(match, game, liveGamePayload, feedMatch);
           }
 
           return {
@@ -125,7 +140,7 @@ router.get('/live', async (req, res) => {
             minuteValue: Number.parseInt(liveGamePayload.liveMinute, 10) || 999,
             updatedAt: game?.updated_at || game?.updatedAt || game?.last_update || game?.datetime || game?.utc_date || game?.date || game?.time || new Date().toISOString()
           };
-        })
+        })))
         .filter(Boolean)
         .sort((a, b) => {
           if (b.minuteValue !== a.minuteValue) return b.minuteValue - a.minuteValue;
@@ -133,7 +148,6 @@ router.get('/live', async (req, res) => {
         });
 
       if (liveCandidates.length) {
-        const actualContext = buildResolutionContext(matches);
         const actualTeams = resolveMatchTeams(liveCandidates[0].liveMatch, actualContext);
 
         return res.json({
@@ -212,7 +226,6 @@ router.get('/live', async (req, res) => {
       return res.json(null);
     }
 
-    const actualContext = buildResolutionContext(matches);
     const actualTeams = resolveMatchTeams(liveMatch, actualContext);
 
     return res.json({
