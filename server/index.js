@@ -84,22 +84,24 @@ async function runLiveSyncIfNeeded() {
   }
 }
 
+async function syncIndexesInBackground() {
+  try {
+    await Promise.all([
+      mongoose.model('Prediction').syncIndexes(),
+      mongoose.model('Entry').syncIndexes()
+    ]);
+  } catch (error) {
+    console.warn(`Index sync skipped: ${error.message}`);
+  }
+}
+
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(async () => {
-    try {
-      await Promise.all([
-        mongoose.model('Prediction').syncIndexes(),
-        mongoose.model('Entry').syncIndexes()
-      ]);
-    } catch (error) {
-      console.warn(`Index sync skipped: ${error.message}`);
-    }
-  })
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Polla Mundialista running on http://localhost:${PORT}`);
     });
+    void syncIndexesInBackground();
     void runLiveSyncIfNeeded();
     setInterval(() => {
       void runLiveSyncIfNeeded();

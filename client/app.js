@@ -26,6 +26,7 @@ const state = {
     worstTeamBonus: 0,
     total: 0
   },
+  predictionSummaryPromise: null,
   predictionsViewer: {
     open: false,
     loading: false,
@@ -1083,6 +1084,19 @@ function computePredictedGroupTables(matches) {
   return { tables, groupStatus };
 }
 
+const OFFICIAL_THIRD_PLACE_ASSIGNMENTS = {
+  'B,D,E,F,I,J,K,L': {
+    '3ABCDF': 'D',
+    '3AEHIJ': 'I',
+    '3BEFIJ': 'B',
+    '3CDFGH': 'F',
+    '3CEFHI': 'E',
+    '3DEIJL': 'L',
+    '3EFGIJ': 'J',
+    '3EHIJK': 'K'
+  }
+};
+
 function buildClientPredictionResolution(matches) {
   const { tables, groupStatus } = computePredictedGroupTables(matches);
   const matchesByCode = new Map(matches.filter((match) => match.code).map((match) => [String(match.code).toUpperCase(), match]));
@@ -1108,6 +1122,18 @@ function buildClientPredictionResolution(matches) {
 
     const bestThirdMatch = text.match(/^3([A-L]+)$/i);
     if (bestThirdMatch) {
+      const comboKey = [...thirdPlaceRows]
+        .slice(0, 8)
+        .map((row) => row.group)
+        .filter(Boolean)
+        .sort()
+        .join(',');
+      const officialGroup = OFFICIAL_THIRD_PLACE_ASSIGNMENTS[comboKey]?.[text.toUpperCase()];
+      if (officialGroup) {
+        const officialRow = thirdPlaceRows.find((row) => row.group === officialGroup);
+        if (officialRow?.team) return officialRow.team;
+      }
+
       if (thirdAssignments.has(text)) return thirdAssignments.get(text) || '';
       const allowedGroups = new Set(bestThirdMatch[1].toUpperCase().split(''));
       const candidate = thirdPlaceRows.find((row) => {
@@ -1161,6 +1187,17 @@ function resolveSource(source, groupTables, groupStatus, matchesByCode) {
   const sourceText = String(source || '');
   const groupMatch = sourceText.match(/^([123])([A-L])$/i);
 
+  const thirdPlaceRows = Object.entries(groupTables)
+    .map(([group, rows]) => ({ ...(rows[2] || {}), group }))
+    .filter((row) => row.team)
+    .sort((a, b) => b.points - a.points || b.diff - a.diff || b.goalsFor - a.goalsFor || a.team.localeCompare(b.team));
+  const comboKey = thirdPlaceRows
+    .slice(0, 8)
+    .map((row) => row.group)
+    .filter(Boolean)
+    .sort()
+    .join(',');
+
   if (groupMatch) {
     const index = Number(groupMatch[1]) - 1;
     const group = groupMatch[2].toUpperCase();
@@ -1183,6 +1220,14 @@ function resolveSource(source, groupTables, groupStatus, matchesByCode) {
     const match = matchesByCode.get(code);
     if (!match || !match.resultSet || match.scoreA === match.scoreB) return null;
     return match.scoreA > match.scoreB ? match.teamB : match.teamA;
+  }
+
+  const bestThirdMatch = sourceText.match(/^3([A-L]+)$/i);
+  if (bestThirdMatch) {
+    const officialGroup = OFFICIAL_THIRD_PLACE_ASSIGNMENTS[comboKey]?.[sourceText.toUpperCase()];
+    if (officialGroup) {
+      return thirdPlaceRows.find((row) => row.group === officialGroup)?.team || sourceText;
+    }
   }
 
   return sourceText;
@@ -1834,11 +1879,13 @@ function renderMyPredictionsTable(predictions) {
         const label = item.code ? `${item.code} · ${stageLabel(item.stage)}` : stageLabel(item.stage);
         const score = `${item.predictedScoreA}-${item.predictedScoreB}`;
         const status = item.scored ? 'Calificada' : 'Pendiente';
+        const teamALabel = item.predictedResolvedTeamA || item.teamA || getPredictionDisplayTeamLabel(item, 'A');
+        const teamBLabel = item.predictedResolvedTeamB || item.teamB || getPredictionDisplayTeamLabel(item, 'B');
 
         return `
           <div class="my-predictions-row">
             <div class="my-predictions-match">
-              <strong>${escapeHtml(item.teamA)} vs ${escapeHtml(item.teamB)}</strong>
+              <strong>${escapeHtml(teamALabel)} vs ${escapeHtml(teamBLabel)}</strong>
               <span>${escapeHtml(label)}</span>
             </div>
             <div class="my-predictions-score">${escapeHtml(score)}</div>
@@ -1878,13 +1925,8 @@ function renderMyPredictionsCards(predictions, options = {}) {
         const label = item.code ? `${item.code} · ${stageLabel(item.stage)}` : stageLabel(item.stage);
         const score = `${item.predictedScoreA}-${item.predictedScoreB}`;
         const status = item.scored ? 'Calificada' : 'Pendiente';
-        const match = state.matches.find((entry) => String(entry._id) === String(item.matchId));
-        const teamALabel = match
-          ? (match.actualResolvedTeamA || match.predictedResolvedTeamA || getPredictionDisplayTeamLabel(match, 'A'))
-          : (item.teamA && item.teamA !== 'Por definir' ? item.teamA : getPredictionDisplayTeamLabel(item, 'A'));
-        const teamBLabel = match
-          ? (match.actualResolvedTeamB || match.predictedResolvedTeamB || getPredictionDisplayTeamLabel(match, 'B'))
-          : (item.teamB && item.teamB !== 'Por definir' ? item.teamB : getPredictionDisplayTeamLabel(item, 'B'));
+        const teamALabel = item.predictedResolvedTeamA || item.teamA || getPredictionDisplayTeamLabel(item, 'A');
+        const teamBLabel = item.predictedResolvedTeamB || item.teamB || getPredictionDisplayTeamLabel(item, 'B');
         const qualifier =
           item.stage !== 'group' && Number(item.predictedScoreA) === Number(item.predictedScoreB) && item.predictedQualifiedTeam
             ? `Clasifica ${item.predictedQualifiedTeam === 'teamA' ? teamALabel : teamBLabel}`
@@ -2014,6 +2056,38 @@ function renderPredictionsViewerBody(viewer = {}) {
       emptyMessage: viewer.emptyMessage || 'Aun no hay predicciones para mostrar.'
     })}
   `;
+}
+
+async function refreshPredictionSummary({ silent = true } = {}) {
+  if (state.predictionSummaryPromise) {
+    return state.predictionSummaryPromise;
+  }
+
+  state.predictionSummaryPromise = apiFetch('/predictions/summary')
+    .then((summary) => {
+      state.predictionSummary = {
+        matchPoints: Number(summary?.matchPoints || 0),
+        groupBonus: Number(summary?.groupBonus || 0),
+        knockoutBonus: Number(summary?.knockoutBonus || 0),
+        worstTeamBonus: Number(summary?.worstTeamBonus || 0),
+        total: Number(summary?.total || 0)
+      };
+      syncPredictionsViewerModal();
+      renderLeaderboardPredictionSummary();
+      if (document.getElementById('groupsBoard')) {
+        renderFixture(state.matches, state.myPredictions);
+      }
+    })
+    .catch((error) => {
+      if (!silent) {
+        toast(error.message || 'No se pudo cargar el resumen de puntos.', 'error');
+      }
+    })
+    .finally(() => {
+      state.predictionSummaryPromise = null;
+    });
+
+  return state.predictionSummaryPromise;
 }
 
 function syncPredictionsViewerModal() {
@@ -2778,13 +2852,13 @@ function renderNextMatchCard(matches) {
 
   const teamA = nextMatch.actualResolvedTeamA
     || nextMatch.predictedResolvedTeamA
-    || nextMatch.teamA
-    || prettySourceLabel(nextMatch.sourceA)
+    || (nextMatch.teamA && nextMatch.teamA !== 'Por definir' ? nextMatch.teamA : '')
+    || (nextMatch.sourceA ? prettySourceLabel(nextMatch.sourceA) : '')
     || 'Por definir';
   const teamB = nextMatch.actualResolvedTeamB
     || nextMatch.predictedResolvedTeamB
-    || nextMatch.teamB
-    || prettySourceLabel(nextMatch.sourceB)
+    || (nextMatch.teamB && nextMatch.teamB !== 'Por definir' ? nextMatch.teamB : '')
+    || (nextMatch.sourceB ? prettySourceLabel(nextMatch.sourceB) : '')
     || 'Por definir';
 
   const kickoff = new Intl.DateTimeFormat('es-CO', {
@@ -5173,21 +5247,13 @@ async function saveWorstTeamPrediction() {
 
 async function loadMatches() {
   try {
-    const [matches, myPredictions, worstTeamPrediction, predictionSummary] = await Promise.all([
+    const [matches, myPredictions, worstTeamPrediction] = await Promise.all([
       apiFetch('/matches'),
       apiFetch('/predictions/me'),
-      apiFetch('/predictions/worst-team'),
-      apiFetch('/predictions/summary')
+      apiFetch('/predictions/worst-team')
     ]);
     state.matches = matches;
     state.myPredictions = myPredictions;
-    state.predictionSummary = {
-      matchPoints: Number(predictionSummary.matchPoints || 0),
-      groupBonus: Number(predictionSummary.groupBonus || 0),
-      knockoutBonus: Number(predictionSummary.knockoutBonus || 0),
-      worstTeamBonus: Number(predictionSummary.worstTeamBonus || 0),
-      total: Number(predictionSummary.total || 0)
-    };
     state.worstTeamPrediction = {
       predictedWorstTeam: worstTeamPrediction.predictedWorstTeam || '',
       teams: worstTeamPrediction.teams || [],
@@ -5207,6 +5273,7 @@ async function loadMatches() {
     syncEntryDependentState();
     syncPredictionDrafts(matches);
     renderFixture(state.matches, state.myPredictions);
+    void refreshPredictionSummary({ silent: true });
     const leaderboardList = document.getElementById('leaderboardList');
     const leaderboardEmptyState = document.getElementById('emptyLeaderboard');
     if (leaderboardList && leaderboardEmptyState && state.activeView === 'leaderboard') {
@@ -5605,11 +5672,8 @@ async function loadLeaderboard(list, emptyState, { silent = false, force = false
 
   try {
     state.leaderboard.loading = true;
-    state.leaderboard.promise = Promise.all([
-      apiFetch('/leaderboard'),
-      apiFetch('/predictions/summary').catch(() => null)
-    ]);
-    const [leaderboard, predictionSummary] = await state.leaderboard.promise;
+    state.leaderboard.promise = apiFetch('/leaderboard');
+    const leaderboard = await state.leaderboard.promise;
     const maxPoints   = Math.max(...leaderboard.map((row) => row.points), 1);
     const leader      = leaderboard[0] || null;
     const currentUser = leaderboard.find((row) => row.isCurrentUser) || null;
@@ -5619,16 +5683,6 @@ async function loadLeaderboard(list, emptyState, { silent = false, force = false
     const currentGap  = document.getElementById('leaderboardCurrentGap');
     const totalPlayers = document.getElementById('leaderboardTotalPlayers');
 
-    if (predictionSummary) {
-      state.predictionSummary = {
-        matchPoints: Number(predictionSummary.matchPoints || 0),
-        groupBonus: Number(predictionSummary.groupBonus || 0),
-        knockoutBonus: Number(predictionSummary.knockoutBonus || 0),
-        worstTeamBonus: Number(predictionSummary.worstTeamBonus || 0),
-        total: Number(predictionSummary.total || 0)
-      };
-      syncPredictionsViewerModal();
-    }
     renderLeaderboardPredictionSummary();
     state.leaderboard = {
       items: Array.isArray(leaderboard) ? leaderboard : [],
@@ -5636,6 +5690,7 @@ async function loadLeaderboard(list, emptyState, { silent = false, force = false
       loading: false,
       promise: null
     };
+    void refreshPredictionSummary({ silent: true });
 
     if (spotlight) {
       const medalByRank = {

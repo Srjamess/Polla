@@ -9,6 +9,7 @@ const { ensureUserEntries, serializeEntry } = require('../utils/entries');
 const {
   buildPredictionMap,
   buildResolutionContext,
+  resolveMatchTeams,
   calculateGroupBonus,
   calculateKnockoutBonus
 } = require('../utils/tournament');
@@ -125,8 +126,9 @@ async function buildPredictionSummary(entryId, predictedWorstTeam = '') {
   };
 }
 
-function serializePredictionResponse(prediction) {
+function serializePredictionResponse(prediction, predictedContext = null) {
   const match = prediction.match;
+  const predictedTeams = predictedContext ? resolveMatchTeams(match, predictedContext) : {};
 
   return {
     id: prediction._id,
@@ -144,6 +146,8 @@ function serializePredictionResponse(prediction) {
     scoreA: match.resultSet ? match.scoreA : null,
     scoreB: match.resultSet ? match.scoreB : null,
     liveStatus: String(match.liveStatus || ''),
+    predictedResolvedTeamA: predictedTeams.teamA || '',
+    predictedResolvedTeamB: predictedTeams.teamB || '',
     predictedScoreA: prediction.predictedScoreA,
     predictedScoreB: prediction.predictedScoreB,
     predictedQualifiedTeam: prediction.predictedQualifiedTeam || '',
@@ -159,13 +163,17 @@ router.get('/me', async (req, res) => {
       return res.json([]);
     }
 
-    const predictions = await Prediction.find({ entry: activeEntry._id })
-      .populate('match')
-      .sort({ createdAt: -1 });
+    const [matches, predictions] = await Promise.all([
+      Match.find(),
+      Prediction.find({ entry: activeEntry._id })
+        .populate('match')
+        .sort({ createdAt: -1 })
+    ]);
+    const predictedContext = buildResolutionContext(matches, buildPredictionMap(predictions));
 
     const data = predictions
       .filter((prediction) => prediction.match)
-      .map((prediction) => serializePredictionResponse(prediction));
+      .map((prediction) => serializePredictionResponse(prediction, predictedContext));
 
     res.json(data);
   } catch (error) {
@@ -185,13 +193,17 @@ router.get('/entry/:entryId', async (req, res) => {
       return res.status(404).json({ message: 'Entry not found.' });
     }
 
-    const predictions = await Prediction.find({ entry: entry._id })
-      .populate('match')
-      .sort({ createdAt: -1 });
+    const [matches, predictions] = await Promise.all([
+      Match.find(),
+      Prediction.find({ entry: entry._id })
+        .populate('match')
+        .sort({ createdAt: -1 })
+    ]);
+    const predictedContext = buildResolutionContext(matches, buildPredictionMap(predictions));
 
     const data = predictions
       .filter((prediction) => prediction.match)
-      .map((prediction) => serializePredictionResponse(prediction));
+      .map((prediction) => serializePredictionResponse(prediction, predictedContext));
 
     const summary = await buildPredictionSummary(entry._id, entry.predictedWorstTeam || '');
 

@@ -9,6 +9,18 @@ const BONUS_STAGE_POINTS = {
 };
 
 const CHAMPION_BONUS = 12;
+const OFFICIAL_THIRD_PLACE_ASSIGNMENTS = {
+  'B,D,E,F,I,J,K,L': {
+    '3ABCDF': 'D',
+    '3AEHIJ': 'I',
+    '3BEFIJ': 'B',
+    '3CDFGH': 'F',
+    '3CEFHI': 'E',
+    '3DEIJL': 'L',
+    '3EFGIJ': 'J',
+    '3EHIJK': 'K'
+  }
+};
 
 function normalizeTeamName(name) {
   return String(name || '').trim();
@@ -225,6 +237,20 @@ function resolveSource(source, context) {
 
   const bestThirdMatch = text.match(/^3([A-L]+)$/i);
   if (bestThirdMatch) {
+    const comboMap = OFFICIAL_THIRD_PLACE_ASSIGNMENTS[
+      [...context.thirdPlaceRows]
+        .slice(0, 8)
+        .map((row) => row.group)
+        .filter(Boolean)
+        .sort()
+        .join(',')
+    ];
+    const officialGroup = comboMap?.[text.toUpperCase()];
+    if (officialGroup) {
+      const officialRow = context.thirdPlaceRows.find((row) => row.group === officialGroup);
+      if (officialRow?.team) return officialRow.team;
+    }
+
     if (context.thirdAssignments.has(text)) {
       return context.thirdAssignments.get(text);
     }
@@ -331,7 +357,10 @@ function calculateKnockoutBonus(matches, actualContext, predictedContext) {
 }
 
 function buildPredictionMap(predictions) {
-  return new Map(predictions.map((prediction) => [String(prediction.match), prediction]));
+  return new Map(predictions.map((prediction) => {
+    const matchId = prediction.match?._id || prediction.match;
+    return [String(matchId), prediction];
+  }));
 }
 
 module.exports = {
