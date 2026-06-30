@@ -101,17 +101,20 @@ async function buildPredictionSummary(entryId, predictedWorstTeam = '') {
     getAppSettings()
   ]);
 
+  const actualContext = buildResolutionContext(matches);
+  const predictedContext = buildResolutionContext(matches, buildPredictionMap(predictions));
   let matchPoints = 0;
 
   predictions.forEach((prediction) => {
     const match = matches.find((entry) => String(entry._id) === String(prediction.match));
     const scoreState = getMatchScoreState(match);
     if (!match || !scoreState.played) return;
-    matchPoints += calculateMatchPoints(prediction, match);
+    matchPoints += calculateMatchPoints(prediction, match, {
+      actualContext,
+      predictedContext
+    });
   });
 
-  const actualContext = buildResolutionContext(matches);
-  const predictedContext = buildResolutionContext(matches, buildPredictionMap(predictions));
   const groupBonus = calculateGroupBonus(actualContext, predictedContext);
   const knockoutBonus = calculateKnockoutBonus(matches, actualContext, predictedContext);
   const worstTeamBonus =

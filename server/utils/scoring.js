@@ -8,6 +8,7 @@ const { getMatchScoreState } = require('./matchResolution');
 const {
   buildPredictionMap,
   buildResolutionContext,
+  resolveMatchTeams,
   calculateGroupBonus,
   calculateKnockoutBonus
 } = require('./tournament');
@@ -17,7 +18,29 @@ function outcome(scoreA, scoreB) {
   return scoreA > scoreB ? 'teamA' : 'teamB';
 }
 
+function isExactKnockoutBracket(match, actualContext, predictedContext) {
+  if (!match || match.stage === 'group' || !actualContext || !predictedContext) {
+    return true;
+  }
+
+  const actualTeams = resolveMatchTeams(match, actualContext);
+  const predictedTeams = resolveMatchTeams(match, predictedContext);
+
+  if (!actualTeams.teamA || !actualTeams.teamB || !predictedTeams.teamA || !predictedTeams.teamB) {
+    return false;
+  }
+
+  return (
+    actualTeams.teamA === predictedTeams.teamA &&
+    actualTeams.teamB === predictedTeams.teamB
+  );
+}
+
 function calculateMatchPoints(prediction, match, options = {}) {
+  const {
+    actualContext = null,
+    predictedContext = null
+  } = options;
   const scoreState = getMatchScoreState(match, options);
   if (!scoreState.played) return 0;
 
@@ -25,7 +48,7 @@ function calculateMatchPoints(prediction, match, options = {}) {
     prediction.predictedScoreA === scoreState.scoreA &&
     prediction.predictedScoreB === scoreState.scoreB;
 
-  if (exactScore) return 3;
+  if (exactScore && isExactKnockoutBracket(match, actualContext, predictedContext)) return 3;
 
   const predictedOutcome = outcome(
     prediction.predictedScoreA,
@@ -45,12 +68,41 @@ async function recalculateAllScores() {
   ]);
 
   const matchById = new Map(matches.map((match) => [String(match._id), match]));
+  const predictionsByEntry = new Map();
+  const orphanPredictions = [];
+
+  predictions.forEach((prediction) => {
+    const entryId = prediction.entry ? String(prediction.entry) : '';
+    if (!entryId) {
+      orphanPredictions.push(prediction);
+      return;
+    }
+
+    if (!predictionsByEntry.has(entryId)) predictionsByEntry.set(entryId, []);
+    predictionsByEntry.get(entryId).push(prediction);
+  });
+
+  const actualContext = buildResolutionContext(matches);
+  const scoringContexts = new Map();
+
+  predictionsByEntry.forEach((entryPredictions, entryId) => {
+    scoringContexts.set(entryId, buildResolutionContext(matches, buildPredictionMap(entryPredictions)));
+  });
+
+  if (orphanPredictions.length) {
+    scoringContexts.set('__orphan__', buildResolutionContext(matches, buildPredictionMap(orphanPredictions)));
+  }
+
   const predictionWrites = [];
 
   predictions.forEach((prediction) => {
     const match = matchById.get(String(prediction.match));
+    const entryId = prediction.entry ? String(prediction.entry) : '__orphan__';
+    const predictedContext = scoringContexts.get(entryId) || null;
     const scoreState = getMatchScoreState(match, { includeLive: true });
-    const nextPoints = match && scoreState.played ? calculateMatchPoints(prediction, match) : 0;
+    const nextPoints = match && scoreState.played
+      ? calculateMatchPoints(prediction, match, { actualContext, predictedContext })
+      : 0;
     const nextScored = Boolean(match && scoreState.played);
 
     if (Number(prediction.points || 0) !== nextPoints || Boolean(prediction.scored) !== nextScored) {
@@ -83,18 +135,17 @@ async function recalculateAllScores() {
     })
   );
 
-  const predictionsByEntry = new Map();
+  const entryPredictionsByEntry = new Map();
 
   predictions.forEach((prediction) => {
     const entryId = prediction.entry ? String(prediction.entry) : '';
 
     if (entryId) {
-      if (!predictionsByEntry.has(entryId)) predictionsByEntry.set(entryId, []);
-      predictionsByEntry.get(entryId).push(prediction);
+      if (!entryPredictionsByEntry.has(entryId)) entryPredictionsByEntry.set(entryId, []);
+      entryPredictionsByEntry.get(entryId).push(prediction);
     }
   });
 
-  const actualContext = buildResolutionContext(matches);
   const entryWrites = [];
   const userWrites = [];
 
@@ -106,7 +157,7 @@ async function recalculateAllScores() {
 
     for (const entry of entries) {
       const entryId = String(entry._id);
-      const entryPredictions = predictionsByEntry.get(entryId) || [];
+      const entryPredictions = entryPredictionsByEntry.get(entryId) || [];
       let entryTotal = 0;
 
       entryPredictions.forEach((prediction) => {

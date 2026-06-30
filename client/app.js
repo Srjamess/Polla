@@ -3636,7 +3636,7 @@ function renderScoringModal() {
             <div class="scoring-hero-copy">
               <span class="scoring-hero-badge">Resumen rapido</span>
               <strong class="scoring-hero-title">Puntos por partido + bonos del torneo</strong>
-              <p>Tu puntaje final se arma con dos bloques: puntos por partido y bonos del torneo. Los bonos del bracket se suman por equipo correcto dentro de cada fase.</p>
+              <p>Tu puntaje final se arma con dos bloques: puntos por partido y bonos del torneo. En eliminatoria, el marcador solo da puntaje completo si la llave que armaste coincide con la llave real.</p>
               <p class="scoring-hero-subtitle">No son reglas separadas: primero sumas los puntos del partido y después agregas los bonos de grupos, eliminatoria, campeón y peor equipo cuando correspondan.</p>
             </div>
             <div class="scoring-hero-grid">
@@ -3692,7 +3692,7 @@ function renderScoringModal() {
               </article>
               <article class="scoring-explainer-card">
                 <strong>Fases eliminatorias</strong>
-                <p>En cada ronda se revisa si tu llave coincide con la llave real. Sumas puntos <strong>por cada equipo correcto</strong> que hayas ubicado en el lugar correcto.</p>
+                <p>En cada ronda se revisa si tu llave coincide con la llave real. Si no coincide, ese partido solo puede sumar por acertar el ganador; el marcador exacto no da los 3 puntos completos.</p>
               </article>
               <article class="scoring-explainer-card">
                 <strong>Peor equipo del torneo</strong>
@@ -3753,7 +3753,7 @@ function renderScoringModal() {
           </section>
 
           <section class="scoring-note">
-            <strong>Importante:</strong> los bonos de grupo solo cuentan cuando el grupo ya esta completo. Los bonos de eliminatoria solo se suman cuando la ronda real ya quedo resuelta. El bono de peor equipo solo cuenta cuando el admin fija el peor equipo oficial.
+            <strong>Importante:</strong> los bonos de grupo solo cuentan cuando el grupo ya esta completo. Los bonos de eliminatoria solo se suman cuando la ronda real ya quedo resuelta. En eliminatoria, el marcador exacto solo vale 3 si la llave predicha coincide con la real; si no, cuenta solo el ganador. El bono de peor equipo solo cuenta cuando el admin fija el peor equipo oficial.
           </section>
         </div>
       </div>
@@ -3784,7 +3784,7 @@ function renderPredictionsHelpModal() {
           <section class="help-step">
             <div class="help-step-head">
               <h4>2. Cruces de eliminatoria</h4>
-              <p>En 16avos y fases siguientes, si empatan, selecciona el equipo que clasifica.</p>
+              <p>En 16avos y fases siguientes, si empatan, selecciona el equipo que clasifica. Si la llave no coincide con la real, ese partido solo puntua por el ganador.</p>
             </div>
             <img class="help-step-image" src="assets/help/step-2-round-of-16.png" alt="Ejemplo de prediccion en dieciseisavos de final" loading="lazy" />
           </section>
