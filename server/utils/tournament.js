@@ -1,11 +1,12 @@
 const { getMatchScoreState, getMatchQualifiedSide } = require('./matchResolution');
 
 const BONUS_STAGE_POINTS = {
-  roundOf16: 2,
-  quarterfinal: 3,
-  semifinal: 5,
+  roundOf32: 2,
+  roundOf16: 3,
+  quarterfinal: 4,
+  semifinal: 6,
   final: 8,
-  thirdPlace: 2
+  thirdPlace: 5
 };
 
 const CHAMPION_BONUS = 12;
@@ -314,8 +315,8 @@ function calculateGroupBonus(actualContext, predictedContext) {
     const actualRows = actualContext.tables[group] || [];
     const predictedRows = predictedContext.tables[group] || [];
 
-    const actualTop = actualRows.slice(0, 2);
-    const predictedTop = predictedRows.slice(0, 2);
+    const actualTop = actualRows.slice(0, 3);
+    const predictedTop = predictedRows.slice(0, 3);
     const predictedTeams = new Set(predictedTop.map((row) => row.team));
 
     actualTop.forEach((row, index) => {

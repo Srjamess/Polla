@@ -314,12 +314,8 @@ router.patch('/:id/result', requireAdmin, async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    await recalculateAllScores();
     res.json(match);
-    setImmediate(() => {
-      void recalculateAllScores().catch((error) => {
-        console.warn(`Score recalculation skipped after manual result save: ${error.message}`);
-      });
-    });
   } catch (error) {
     res.status(500).json({ message: 'Could not update result.' });
   }

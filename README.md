@@ -121,6 +121,11 @@ El script borra los partidos existentes e inserta un fixture demo con grupos A/B
 - Marcador exacto: 3 puntos
 - Ganador o empate correcto, pero marcador distinto: 1 punto
 - Resultado incorrecto: 0 puntos
+- Fase de grupos: 2 puntos por cada clasificado correcto del top 3, mas 1 punto extra si tambien aciertas la posicion exacta
+- Eliminatoria: bono por ronda desde dieciseisavos, octavos, cuartos, semifinal, final y tercer puesto cuando corresponda
+- Campeon: +12 extra
+- Tercer puesto: +5 por equipo
+- Peor equipo oficial: +5
 
 ## Endpoints principales
 

@@ -60,7 +60,7 @@ function calculateMatchPoints(prediction, match, options = {}) {
 }
 
 async function recalculateAllScores() {
-  const [matches, predictions, users, settings] = await Promise.all([
+  const [matches, initialPredictions, users, settings] = await Promise.all([
     Match.find().lean(),
     Prediction.find().lean(),
     User.find().select('_id username avatarPreset avatarImage predictedWorstTeam isPaid').lean(),
@@ -68,6 +68,20 @@ async function recalculateAllScores() {
   ]);
 
   const matchById = new Map(matches.map((match) => [String(match._id), match]));
+
+  const userContexts = new Map();
+  const migrationFlags = await Promise.all(
+    users.map(async (user) => {
+      const context = await ensureUserEntries(user);
+      userContexts.set(String(user._id), context);
+      return context.migratedLegacyPredictions;
+    })
+  );
+
+  const predictions = migrationFlags.some(Boolean)
+    ? await Prediction.find().lean()
+    : initialPredictions;
+
   const predictionsByEntry = new Map();
   const orphanPredictions = [];
 
@@ -126,14 +140,6 @@ async function recalculateAllScores() {
   if (predictionWrites.length) {
     await Prediction.bulkWrite(predictionWrites, { ordered: false });
   }
-
-  const userContexts = new Map();
-  await Promise.all(
-    users.map(async (user) => {
-      const context = await ensureUserEntries(user);
-      userContexts.set(String(user._id), context);
-    })
-  );
 
   const entryPredictionsByEntry = new Map();
 
